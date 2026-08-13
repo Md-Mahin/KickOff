@@ -54,7 +54,7 @@ function MatchRow({ match }: { match: Match }) {
 export default function HomePage() {
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
+      {/* <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <Link href="/" className="text-lg font-semibold tracking-tight">
             nilnil
@@ -76,7 +76,7 @@ export default function HomePage() {
             Sign in
           </Button>
         </div>
-      </header>
+      </header> */}
 
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">

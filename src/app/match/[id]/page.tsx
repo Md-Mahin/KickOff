@@ -1,9 +1,10 @@
-import Link from "next/link"
+// import Link from "next/link"
 import { notFound } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import Navbar from "@/components/ui/navbar"
 import {
   getMatchById,
   type MatchEvent,
@@ -98,10 +99,10 @@ export default async function MatchPage({
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
+      {/* <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
           <Link href="/" className="text-lg font-semibold tracking-tight">
-            nilnil
+            KickOff
           </Link>
 
           <Link
@@ -111,7 +112,7 @@ export default async function MatchPage({
             Back to matches
           </Link>
         </div>
-      </header>
+      </header> */}
 
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="mb-4 text-sm text-muted-foreground">
