@@ -3,7 +3,9 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { leagues, type Match } from "@/lib/matches"
+import { getMatches } from "@/lib/api"
+import type { Match } from "@/lib/matches"
+import Image from "next/image"
 
 function MatchStatus({ match }: { match: Match }) {
   if (match.status === "LIVE") {
@@ -26,14 +28,42 @@ function MatchRow({ match }: { match: Match }) {
     <div className="flex items-center justify-between px-4 py-4">
       <div className="flex-1 space-y-2">
         <div className="flex items-center justify-between gap-4">
-          <span className="text-sm font-medium">{match.homeTeam}</span>
+          <div className="flex items-center gap-2">
+  {match.homeLogo && (
+    <Image
+      src={match.homeLogo}
+      alt={match.homeTeam}
+      width={24}
+      height={24}
+      className="object-contain"
+    />
+  )}
+
+  <span className="text-sm font-medium">
+    {match.homeTeam}
+  </span>
+</div>
           <span className="text-sm font-semibold">
             {match.status === "UPCOMING" ? "-" : match.homeScore}
           </span>
         </div>
 
         <div className="flex items-center justify-between gap-4">
-          <span className="text-sm font-medium">{match.awayTeam}</span>
+          <div className="flex items-center gap-2">
+  {match.awayLogo && (
+    <Image
+      src={match.awayLogo}
+      alt={match.awayTeam}
+      width={24}
+      height={24}
+      className="object-contain"
+    />
+  )}
+
+  <span className="text-sm font-medium">
+    {match.awayTeam}
+  </span>
+</div>
           <span className="text-sm font-semibold">
             {match.status === "UPCOMING" ? "-" : match.awayScore}
           </span>
@@ -51,7 +81,9 @@ function MatchRow({ match }: { match: Match }) {
   )
 }
 
-export default function HomePage() {
+export default async function HomePage() {
+  const leagues = await getMatches()
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur">
@@ -107,7 +139,7 @@ export default function HomePage() {
 
         <div className="space-y-8">
           {leagues.map((leagueGroup) => (
-            <section key={leagueGroup.league}>
+            <section key={`${leagueGroup.league}:${leagueGroup.country}`}>
               <div className="mb-3 flex items-center justify-between">
                 <div>
                   <h2 className="text-sm font-semibold">
