@@ -8,7 +8,9 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "next dev",
+    "dev:api": "npm --prefix backend run dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

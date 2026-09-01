@@ -1,5 +1,5 @@
 import Link from "next/link"
-import { Bell, Menu, X } from "lucide-react"
+import { Bell, Menu } from "lucide-react"
 
 export default function Navbar() {
   return (
@@ -76,16 +76,12 @@ export default function Navbar() {
               <Bell className="size-6" />
             </button>
 
-            {/* Profile */}
-            <button
-              type="button"
-              className="relative ml-3 flex rounded-full focus:outline-none"
-              aria-label="User profile"
+            <Link
+              href="/sign-in"
+              className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-white/70"
             >
-              <div className="flex size-8 items-center justify-center rounded-full bg-indigo-500 text-sm font-semibold text-white">
-                M
-              </div>
-            </button>
+              Sign in
+            </Link>
 
           </div>
         </div>

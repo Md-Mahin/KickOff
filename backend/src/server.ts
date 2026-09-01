@@ -1,10 +1,12 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import path from "path";
 import matchRoutes from "./routes/matchRoutes";
+import authRoutes from "./routes/authRoutes";
 import { pool } from "./db";
 
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 const app = express();
 
@@ -35,6 +37,7 @@ app.get("/api/test-db", async (_req, res) => {
 });
 
 app.use("/api/matches", matchRoutes);
+app.use("/api/auth", authRoutes);
 
 const PORT = process.env.PORT || 5000;
 
