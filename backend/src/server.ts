@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import matchRoutes from "./routes/matchRoutes";
+import { pool } from "./db";
 
 dotenv.config();
 
@@ -14,6 +15,23 @@ app.get("/", (_req, res) => {
   res.json({
     message: "KickOff backend is running!",
   });
+});
+
+app.get("/api/test-db", async (_req, res) => {
+  try {
+    const result = await pool.query("SELECT NOW()");
+
+    res.json({
+      message: "PostgreSQL connection successful",
+      time: result.rows[0].now,
+    });
+  } catch (error) {
+    console.error(error);
+
+    res.status(500).json({
+      message: "PostgreSQL connection failed",
+    });
+  }
 });
 
 app.use("/api/matches", matchRoutes);
