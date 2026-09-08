@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 
 import { AuthShell } from "@/components/auth/auth-shell"
@@ -11,9 +11,9 @@ const inputClassName =
   "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/20"
 
 export default function SignInPage() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
+  const router = useRouter() 
   const [error, setError] = useState("")
+  const [registered] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("registered") === "1")
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -26,20 +26,20 @@ export default function SignInPage() {
     try {
       const response = await fetch("http://localhost:5000/api/auth/login", {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: formData.get("email"),
           password: formData.get("password"),
         }),
       })
-      const data = (await response.json()) as { message?: string; token?: string }
+      const data = (await response.json()) as { message?: string; user?: unknown }
 
-      if (!response.ok || !data.token) {
+      if (!response.ok || !data.user) {
         setError(data.message ?? "Unable to sign in. Please try again.")
         return
       }
 
-      localStorage.setItem("kickoff_token", data.token)
       router.push("/")
     } catch {
       setError("The sign-in service is unavailable. Please try again shortly.")
@@ -57,7 +57,7 @@ export default function SignInPage() {
       footerHref="/sign-up"
     >
       <form className="space-y-4" onSubmit={handleSubmit}>
-        {searchParams.get("registered") === "1" ? (
+        {registered ? (
           <p className="rounded-lg border border-green-500/20 bg-green-500/10 px-3 py-2 text-sm text-green-700" role="status">
             Account created. You can sign in now.
           </p>

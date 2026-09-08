@@ -1,7 +1,24 @@
+"use client"
+
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Bell, Menu } from "lucide-react"
+import { useEffect, useState } from "react"
 
 export default function Navbar() {
+  const router = useRouter()
+  const [signedIn, setSignedIn] = useState(false)
+
+  useEffect(() => {
+    fetch("http://localhost:5000/api/auth/me", { credentials: "include" }).then((response) => setSignedIn(response.ok)).catch(() => setSignedIn(false))
+  }, [])
+
+  async function logout() {
+    await fetch("http://localhost:5000/api/auth/logout", { method: "POST", credentials: "include" })
+    setSignedIn(false)
+    router.push("/sign-in")
+  }
+
   return (
     <nav className="relative bg-gray-800">
       <div className="mx-auto max-w-7xl px-2 sm:px-6 lg:px-8">
@@ -39,27 +56,6 @@ export default function Navbar() {
                   Dashboard
                 </Link>
 
-                <Link
-                  href="/matches"
-                  className="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-white/5 hover:text-white"
-                >
-                  Matches
-                </Link>
-
-                <Link
-                  href="/news"
-                  className="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-white/5 hover:text-white"
-                >
-                  News
-                </Link>
-
-                <Link
-                  href="/transfers"
-                  className="rounded-md px-3 py-2 text-sm font-medium text-gray-300 hover:bg-white/5 hover:text-white"
-                >
-                  Transfers
-                </Link>
-
               </div>
             </div>
           </div>
@@ -76,12 +72,7 @@ export default function Navbar() {
               <Bell className="size-6" />
             </button>
 
-            <Link
-              href="/sign-in"
-              className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-white/70"
-            >
-              Sign in
-            </Link>
+            {signedIn ? <button type="button" onClick={logout} className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Log out</button> : <Link href="/sign-in" className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Sign in</Link>}
 
           </div>
         </div>
@@ -96,27 +87,6 @@ export default function Navbar() {
             className="block rounded-md bg-gray-900 px-3 py-2 text-base font-medium text-white"
           >
             Dashboard
-          </Link>
-
-          <Link
-            href="/matches"
-            className="block rounded-md px-3 py-2 text-base font-medium text-gray-300 hover:bg-white/5 hover:text-white"
-          >
-            Matches
-          </Link>
-
-          <Link
-            href="/news"
-            className="block rounded-md px-3 py-2 text-base font-medium text-gray-300 hover:bg-white/5 hover:text-white"
-          >
-            News
-          </Link>
-
-          <Link
-            href="/transfers"
-            className="block rounded-md px-3 py-2 text-base font-medium text-gray-300 hover:bg-white/5 hover:text-white"
-          >
-            Transfers
           </Link>
 
         </div>

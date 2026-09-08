@@ -15,3 +15,35 @@ export const pool = new Pool({
 pool.on("error", (err) => {
   console.error("Unexpected PostgreSQL error:", err);
 });
+
+export async function initializeDatabase() {
+  await pool.query(`
+    ALTER TABLE Users
+      ADD COLUMN IF NOT EXISTS Role VARCHAR(20) NOT NULL DEFAULT 'fan';
+
+    CREATE TABLE IF NOT EXISTS UserSessions (
+      SessionID UUID PRIMARY KEY,
+      UserID INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
+      ExpiresAt TIMESTAMP NOT NULL,
+      RevokedAt TIMESTAMP,
+      CreatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON UserSessions(UserID);
+    CREATE INDEX IF NOT EXISTS idx_user_sessions_active
+      ON UserSessions(SessionID) WHERE RevokedAt IS NULL;
+  `);
+
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check'
+      ) THEN
+        ALTER TABLE Users ADD CONSTRAINT users_role_check
+          CHECK (Role IN ('fan', 'admin'));
+      END IF;
+    END
+    $$;
+  `);
+}

@@ -23,13 +23,16 @@ export default function SignUpPage() {
     const formData = new FormData(event.currentTarget)
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/register", {
+      const bootstrapKey = String(formData.get("bootstrapKey") ?? "").trim()
+      const response = await fetch(`http://localhost:5000/api/auth/${bootstrapKey ? "bootstrap-admin" : "register"}`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: formData.get("name"),
           email: formData.get("email"),
           password: formData.get("password"),
+          ...(bootstrapKey ? { bootstrapKey } : {}),
         }),
       })
       const data = (await response.json()) as { message?: string }
@@ -59,6 +62,12 @@ export default function SignUpPage() {
         <div className="space-y-2">
           <label htmlFor="name" className="text-sm font-medium">Full name</label>
           <input id="name" name="name" type="text" autoComplete="name" placeholder="Your name" className={inputClassName} required />
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="bootstrapKey" className="text-sm font-medium">Administrator invite (optional)</label>
+          <input id="bootstrapKey" name="bootstrapKey" type="password" autoComplete="off" placeholder="Leave blank for a fan account" className={inputClassName} />
+          <p className="text-xs text-muted-foreground">The server assigns the role; this invite only enables administrator setup.</p>
         </div>
 
         <div className="space-y-2">

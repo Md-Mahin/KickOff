@@ -1,7 +1,6 @@
 CREATE TABLE Country (
     CountryID     SERIAL PRIMARY KEY,
     Name          VARCHAR(100) NOT NULL UNIQUE
-    //Federation
 );
 
 CREATE TABLE Federation (
@@ -140,8 +139,20 @@ CREATE TABLE Users (
     Username     VARCHAR(100) NOT NULL UNIQUE,
     Email        VARCHAR(255) NOT NULL UNIQUE,
     PasswordHash TEXT NOT NULL,
+    Role          VARCHAR(20) NOT NULL DEFAULT 'fan' CHECK (Role IN ('fan', 'admin')),
     CreatedAt    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE UserSessions (
+    SessionID    UUID PRIMARY KEY,
+    UserID       INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
+    ExpiresAt    TIMESTAMP NOT NULL,
+    RevokedAt    TIMESTAMP,
+    CreatedAt    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_user_sessions_user ON UserSessions(UserID);
+CREATE INDEX idx_user_sessions_active ON UserSessions(SessionID) WHERE RevokedAt IS NULL;
 
 CREATE TABLE UserFollowsTeam (
     UserID        INT NOT NULL REFERENCES Users(UserID),

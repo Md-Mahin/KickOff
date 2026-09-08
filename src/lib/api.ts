@@ -1,6 +1,5 @@
 import type {
   LeagueGroup,
-  Match,
   MatchStatus,
   MatchWithLeague,
 } from "@/lib/matches"
@@ -92,7 +91,7 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
   }
 }
 
-export async function getMatches(): Promise<LeagueGroup[]> {
+export async function getMatches(cookie?: string): Promise<LeagueGroup[]> {
   let data: { response?: ApiFixture[] }
 
   try {
@@ -100,6 +99,7 @@ export async function getMatches(): Promise<LeagueGroup[]> {
       `${API_URL}/api/matches`,
       {
         cache: "no-store",
+        headers: cookie ? { cookie } : undefined,
       }
     )
 

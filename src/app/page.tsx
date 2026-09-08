@@ -6,6 +6,10 @@ import { Separator } from "@/components/ui/separator"
 import { getMatches } from "@/lib/api"
 import type { Match } from "@/lib/matches"
 import Image from "next/image"
+import { RoleDashboard } from "@/components/dashboard/role-dashboard"
+import { cookies } from "next/headers"
+
+export const dynamic = "force-dynamic"
 
 function MatchStatus({ match }: { match: Match }) {
   if (match.status === "LIVE") {
@@ -82,7 +86,8 @@ function MatchRow({ match }: { match: Match }) {
 }
 
 export default async function HomePage() {
-  const leagues = await getMatches()
+  const cookieStore = await cookies()
+  const leagues = await getMatches(cookieStore.toString())
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -176,6 +181,7 @@ export default async function HomePage() {
             </section>
           ))}
         </div>
+        <RoleDashboard />
       </main>
     </div>
   )
