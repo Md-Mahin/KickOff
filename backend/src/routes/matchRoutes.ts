@@ -15,7 +15,7 @@ router.get("/", async (_req, res) => {
   } catch (error) {
     console.error(error);
 
-    res.status(500).json({
+    res.status(502).json({
       message: "Failed to fetch football matches",
     });
   }
@@ -44,7 +44,7 @@ router.get("/:id", async (req, res) => {
   } catch (error) {
     console.error(error);
 
-    res.status(500).json({
+    res.status(502).json({
       message: "Failed to fetch match",
     });
   }

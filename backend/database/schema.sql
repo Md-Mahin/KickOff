@@ -1,6 +1,7 @@
 CREATE TABLE Country (
     CountryID     SERIAL PRIMARY KEY,
     Name          VARCHAR(100) NOT NULL UNIQUE
+    //Federation
 );
 
 CREATE TABLE Federation (

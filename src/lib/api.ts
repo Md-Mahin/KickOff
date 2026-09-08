@@ -93,19 +93,24 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
 }
 
 export async function getMatches(): Promise<LeagueGroup[]> {
-  const response = await fetch(
-    `${API_URL}/api/matches`,
-    {
-      cache: "no-store",
+  let data: { response?: ApiFixture[] }
+
+  try {
+    const response = await fetch(
+      `${API_URL}/api/matches`,
+      {
+        cache: "no-store",
+      }
+    )
+
+    if (!response.ok) {
+      throw new Error(`Match API returned ${response.status}`)
     }
-  )
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch live matches")
-  }
-
-  const data = (await response.json()) as {
-    response?: ApiFixture[]
+    data = (await response.json()) as { response?: ApiFixture[] }
+  } catch (error) {
+    console.error("Unable to load live matches:", error)
+    return []
   }
 
   const groups = new Map<string, LeagueGroup>()
