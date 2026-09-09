@@ -65,7 +65,8 @@ router.post("/register", (req, res) => register(res, readCredentials(req.body), 
 
 router.post("/bootstrap-admin", (req, res) => {
   const key = typeof req.body?.bootstrapKey === "string" ? req.body.bootstrapKey : "";
-  if (!process.env.ADMIN_BOOTSTRAP_KEY || key !== process.env.ADMIN_BOOTSTRAP_KEY) return res.status(403).json({ message: "A valid administrator invite is required." });
+  const configuredKey = process.env.ADMIN_BOOTSTRAP_KEY?.trim();
+  if (!configuredKey || key.trim() !== configuredKey) return res.status(403).json({ message: "A valid administrator invite is required." });
   return register(res, readCredentials(req.body), "admin");
 });
 

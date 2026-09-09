@@ -4,7 +4,7 @@ KickOff is a Next.js football dashboard backed by an Express and PostgreSQL API.
 
 ## Run locally
 
-Create a `.env` file with the PostgreSQL connection values used by `backend/src/db/index.ts`:
+Copy `backend/.env.example` to `backend/.env` and replace the placeholders. The backend loads this file directly:
 
 ```env
 DB_HOST=localhost
