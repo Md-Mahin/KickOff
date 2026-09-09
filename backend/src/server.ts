@@ -45,11 +45,13 @@ const PORT = process.env.PORT || 5000;
 
 initializeDatabase()
   .then(() => {
+    console.log("Database initialized successfully.");
+  })
+  .catch((error) => {
+    console.warn("Unable to initialize the database schema (server will still start):", error.message);
+  })
+  .finally(() => {
     app.listen(PORT, () => {
       console.log(`KickOff backend running on http://localhost:${PORT}`);
     });
-  })
-  .catch((error) => {
-    console.error("Unable to initialize the database schema:", error);
-    process.exitCode = 1;
   });

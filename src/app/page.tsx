@@ -32,42 +32,44 @@ function MatchRow({ match }: { match: Match }) {
     <div className="flex items-center justify-between px-4 py-4">
       <div className="flex-1 space-y-2">
         <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-  {match.homeLogo && (
-    <Image
-      src={match.homeLogo}
-      alt={match.homeTeam}
-      width={24}
-      height={24}
-      className="object-contain"
-    />
-  )}
-
-  <span className="text-sm font-medium">
-    {match.homeTeam}
-  </span>
-</div>
+          <div className="flex items-center gap-3">
+            {match.homeLogo ? (
+              <Image
+                src={match.homeLogo}
+                alt={match.homeTeam}
+                width={24}
+                height={24}
+                className="object-contain"
+              />
+            ) : (
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                {match.homeTeam.substring(0, 2).toUpperCase()}
+              </div>
+            )}
+            <span className="text-sm font-medium">{match.homeTeam}</span>
+          </div>
           <span className="text-sm font-semibold">
             {match.status === "UPCOMING" ? "-" : match.homeScore}
           </span>
         </div>
 
         <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-  {match.awayLogo && (
-    <Image
-      src={match.awayLogo}
-      alt={match.awayTeam}
-      width={24}
-      height={24}
-      className="object-contain"
-    />
-  )}
-
-  <span className="text-sm font-medium">
-    {match.awayTeam}
-  </span>
-</div>
+          <div className="flex items-center gap-3">
+            {match.awayLogo ? (
+              <Image
+                src={match.awayLogo}
+                alt={match.awayTeam}
+                width={24}
+                height={24}
+                className="object-contain"
+              />
+            ) : (
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                {match.awayTeam.substring(0, 2).toUpperCase()}
+              </div>
+            )}
+            <span className="text-sm font-medium">{match.awayTeam}</span>
+          </div>
           <span className="text-sm font-semibold">
             {match.status === "UPCOMING" ? "-" : match.awayScore}
           </span>
@@ -143,43 +145,57 @@ export default async function HomePage() {
         <Separator className="my-6" />
 
         <div className="space-y-8">
-          {leagues.map((leagueGroup) => (
-            <section key={`${leagueGroup.league}:${leagueGroup.country}`}>
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-semibold">
-                    {leagueGroup.league}
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {leagueGroup.country}
-                  </p>
+          {leagues.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center p-12 text-center">
+                <div className="rounded-full bg-muted p-3 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
+                </div>
+                <h3 className="text-lg font-semibold">No matches today</h3>
+                <p className="text-sm text-muted-foreground max-w-sm mt-1">
+                  We couldn't find any fixtures. Make sure your database is running and the seed script has been executed.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            leagues.map((leagueGroup) => (
+              <section key={`${leagueGroup.league}:${leagueGroup.country}`}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-semibold">
+                      {leagueGroup.league}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {leagueGroup.country}
+                    </p>
+                  </div>
+
+                  <Button variant="ghost" size="sm">
+                    View all
+                  </Button>
                 </div>
 
-                <Button variant="ghost" size="sm">
-                  View all
-                </Button>
-              </div>
+                <Card>
+                  <CardContent className="p-0">
+                    {leagueGroup.matches.map((match, index) => (
+                      <div key={match.id}>
+                        <Link
+                          href={`/match/${match.id}`}
+                          className="block transition hover:bg-muted/50"
+                        >
+                          <MatchRow match={match} />
+                        </Link>
 
-              <Card>
-                <CardContent className="p-0">
-                  {leagueGroup.matches.map((match, index) => (
-                    <div key={match.id}>
-                      <Link
-                        href={`/match/${match.id}`}
-                        className="block transition hover:bg-muted/50"
-                      >
-                        <MatchRow match={match} />
-                      </Link>
-
-                      {index < leagueGroup.matches.length - 1 ? (
-                        <Separator />
-                      ) : null}
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
-            </section>
-          ))}
+                        {index < leagueGroup.matches.length - 1 ? (
+                          <Separator />
+                        ) : null}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </section>
+            ))
+          )}
         </div>
         <RoleDashboard />
       </main>
