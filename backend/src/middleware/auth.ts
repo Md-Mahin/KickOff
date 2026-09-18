@@ -22,25 +22,40 @@ function getToken(req: Request) {
   return cookieToken ?? (header?.startsWith("Bearer ") ? header.slice(7) : undefined);
 }
 
+/**
+ * Verify the JWT and set req.auth.
+ * Role is read directly from the JWT payload — no DB lookup needed.
+ * DB is only consulted (best-effort) to check if the session was revoked.
+ */
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!jwtSecret) return res.status(500).json({ message: "Authentication is not configured." });
   const token = getToken(req);
   if (!token) return res.status(401).json({ message: "Authentication required." });
+
   try {
     const payload = jwt.verify(token, jwtSecret) as jwt.JwtPayload;
     const sessionId = typeof payload.sid === "string" ? payload.sid : "";
     const userId = Number(payload.sub);
-    if (!sessionId || !Number.isInteger(userId)) throw new Error("Invalid session");
-    const result = await pool.query(
-      `SELECT u.UserID AS "userId", u.Role AS "role"
-       FROM UserSessions s JOIN Users u ON u.UserID = s.UserID
-       WHERE s.SessionID = $1 AND s.UserID = $2
-         AND s.RevokedAt IS NULL AND s.ExpiresAt > CURRENT_TIMESTAMP`,
-      [sessionId, userId]
-    );
-    const user = result.rows[0] as { userId: number; role: UserRole } | undefined;
-    if (!user || !["fan", "admin"].includes(user.role)) return res.status(401).json({ message: "Session is invalid or expired." });
-    req.auth = { userId: user.userId, sessionId, role: user.role };
+    const role = typeof payload.role === "string" ? payload.role as UserRole : undefined;
+
+    if (!sessionId || !Number.isInteger(userId) || !role || !["fan", "admin"].includes(role)) {
+      return res.status(401).json({ message: "Session is invalid or expired." });
+    }
+
+    // Best-effort revocation check — skipped silently if DB is offline
+    try {
+      const result = await pool.query(
+        `SELECT 1 FROM UserSessions WHERE SessionID = $1 AND RevokedAt IS NOT NULL`,
+        [sessionId]
+      );
+      if (result.rows.length > 0) {
+        return res.status(401).json({ message: "Session has been revoked. Please sign in again." });
+      }
+    } catch {
+      // DB offline — trust the JWT signature
+    }
+
+    req.auth = { userId, sessionId, role };
     return next();
   } catch {
     return res.status(401).json({ message: "Session is invalid or expired." });
@@ -64,24 +79,26 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
     const payload = jwt.verify(token, jwtSecret) as jwt.JwtPayload;
     const sessionId = typeof payload.sid === "string" ? payload.sid : "";
     const userId = Number(payload.sub);
-    if (!sessionId || !Number.isInteger(userId)) return next();
+    const role = typeof payload.role === "string" ? payload.role as UserRole : undefined;
 
-    const result = await pool.query(
-      `SELECT u.UserID AS "userId", u.Role AS "role"
-       FROM UserSessions s JOIN Users u ON u.UserID = s.UserID
-       WHERE s.SessionID = $1 AND s.UserID = $2
-         AND s.RevokedAt IS NULL AND s.ExpiresAt > CURRENT_TIMESTAMP`,
-      [sessionId, userId]
-    );
-    const user = result.rows[0] as { userId: number; role: UserRole } | undefined;
-    if (user && ["fan", "admin"].includes(user.role)) {
-      req.auth = { userId: user.userId, sessionId, role: user.role };
+    if (sessionId && Number.isInteger(userId) && role && ["fan", "admin"].includes(role)) {
+      // Best-effort revocation check
+      try {
+        const revoked = await pool.query(
+          `SELECT 1 FROM UserSessions WHERE SessionID = $1 AND RevokedAt IS NOT NULL`,
+          [sessionId]
+        );
+        if (revoked.rows.length === 0) {
+          req.auth = { userId, sessionId, role };
+        }
+      } catch {
+        // DB offline — trust the JWT
+        req.auth = { userId, sessionId, role };
+      }
     }
   } catch {
-    // Public endpoints continue without personalization ...............
+    // Invalid token — continue as unauthenticated
   }
 
   return next();
 }
-
-// this is the ai written code. of auth.ts now I want to write it with my own hand now guide me from the scratch of this portion what am I going to write and what I need to write in Bangla step by step and the reason and concept behind those its not neccessary the code I wlill write willl be same to same as the code I have just given you. I will write a code myself that looks like a human written code
