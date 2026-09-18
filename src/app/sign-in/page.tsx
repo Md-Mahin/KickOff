@@ -40,7 +40,7 @@ export default function SignInPage() {
         return
       }
 
-      router.push("/")
+      window.location.href = "/"
     } catch {
       setError("The sign-in service is unavailable. Please try again shortly.")
     } finally {

@@ -203,7 +203,7 @@ export default function SignUpPage() {
         return
       }
 
-      router.push("/")
+      window.location.href = "/"
     } catch {
       setError("The registration service is unavailable. Please try again shortly.")
     } finally {

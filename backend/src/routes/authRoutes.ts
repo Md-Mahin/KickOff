@@ -21,12 +21,20 @@ function setSessionCookie(res: Response, token: string) {
 async function createSession(res: Response, user: User) {
   if (!jwtSecret) throw new Error("JWT_SECRET is not configured");
   const sessionId = randomUUID();
-  await pool.query(
-    `INSERT INTO UserSessions (SessionID, UserID, ExpiresAt)
-     VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '7 days')`,
-    [sessionId, user.id]
+  try {
+    await pool.query(
+      `INSERT INTO UserSessions (SessionID, UserID, ExpiresAt)
+       VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '7 days')`,
+      [sessionId, user.id]
+    );
+  } catch {
+    // DB offline — continue and use stateless session
+  }
+  const token = jwt.sign(
+    { sid: sessionId, role: user.role },
+    jwtSecret,
+    { subject: String(user.id), expiresIn: `${sessionDays}d` }
   );
-  const token = jwt.sign({ sid: sessionId }, jwtSecret, { subject: String(user.id), expiresIn: `${sessionDays}d` });
   setSessionCookie(res, token);
   return { user };
 }

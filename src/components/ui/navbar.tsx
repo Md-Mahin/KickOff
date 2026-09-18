@@ -18,7 +18,7 @@ export default function Navbar() {
   async function logout() {
     await fetch("http://localhost:5000/api/auth/logout", { method: "POST", credentials: "include" })
     setSignedIn(false)
-    router.push("/sign-in")
+    window.location.href = "/sign-in"
   }
 
   return (
