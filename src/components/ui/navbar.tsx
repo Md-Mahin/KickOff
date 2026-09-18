@@ -8,8 +8,10 @@ import { useEffect, useState } from "react"
 export default function Navbar() {
   const router = useRouter()
   const [signedIn, setSignedIn] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     fetch("http://localhost:5000/api/auth/me", { credentials: "include" }).then((response) => setSignedIn(response.ok)).catch(() => setSignedIn(false))
   }, [])
 
@@ -72,7 +74,12 @@ export default function Navbar() {
               <Bell className="size-6" />
             </button>
 
-            {signedIn ? <button type="button" onClick={logout} className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Log out</button> : <Link href="/sign-in" className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Sign in</Link>}
+            {mounted
+              ? signedIn
+                ? <button type="button" onClick={logout} className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Log out</button>
+                : <Link href="/sign-in" className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Sign in</Link>
+              : <Link href="/sign-in" className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Sign in</Link>
+            }
 
           </div>
         </div>

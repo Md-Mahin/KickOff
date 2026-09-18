@@ -156,3 +156,52 @@ export async function getMatchById(
 
   return toMatch(data)
 }
+
+export async function getPopularMatches(): Promise<MatchWithLeague[]> {
+  try {
+    const response = await fetch(`${API_URL}/api/matches/popular`, { cache: "no-store" })
+    if (!response.ok) return []
+    const data = (await response.json()) as { response?: ApiFixture[] }
+    return (data.response ?? []).map(toMatch)
+  } catch {
+    return []
+  }
+}
+
+export async function getFavouriteMatches(cookie: string): Promise<MatchWithLeague[]> {
+  try {
+    const response = await fetch(`${API_URL}/api/matches/favourites`, {
+      cache: "no-store",
+      headers: { cookie },
+    })
+    if (!response.ok) return []
+    const data = (await response.json()) as { response?: ApiFixture[] }
+    return (data.response ?? []).map(toMatch)
+  } catch {
+    return []
+  }
+}
+
+export type TeamEntry = { id: number; name: string; logo: string | null; type: "national" | "club" }
+export type PlayerEntry = { id: number; name: string }
+
+export async function getTeamsCatalog(): Promise<{ national: TeamEntry[]; club: TeamEntry[] }> {
+  try {
+    const response = await fetch(`${API_URL}/api/users/teams/catalog`, { cache: "no-store" })
+    if (!response.ok) return { national: [], club: [] }
+    return response.json()
+  } catch {
+    return { national: [], club: [] }
+  }
+}
+
+export async function getPlayersCatalog(): Promise<PlayerEntry[]> {
+  try {
+    const response = await fetch(`${API_URL}/api/users/players/catalog`, { cache: "no-store" })
+    if (!response.ok) return []
+    const data = (await response.json()) as { players: PlayerEntry[] }
+    return data.players ?? []
+  } catch {
+    return []
+  }
+}
