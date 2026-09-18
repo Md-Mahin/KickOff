@@ -68,7 +68,7 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
 
   return {
     id: fixture.fixture.id,
-
+    
     homeTeam: fixture.teams.home.name,
     awayTeam: fixture.teams.away.name,
 

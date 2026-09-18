@@ -37,11 +37,11 @@ INSERT INTO Club (Name, CountryID, FederationID) VALUES
 
 -- Teams
 INSERT INTO Team (Name, ClubID, CountryID, FederationID) VALUES
-('Arsenal First Team', 1, (SELECT CountryID FROM Country WHERE Name = 'England'), 1),
-('Real Madrid First Team', 2, (SELECT CountryID FROM Country WHERE Name = 'Spain'), 1),
-('Bayern Munich First Team', 3, (SELECT CountryID FROM Country WHERE Name = 'Germany'), 1),
-('PSG First Team', 4, (SELECT CountryID FROM Country WHERE Name = 'France'), 1),
-('AC Milan First Team', 5, (SELECT CountryID FROM Country WHERE Name = 'Italy'), 1);
+('Arsenal ', 1, (SELECT CountryID FROM Country WHERE Name = 'England'), 1),
+('Real Madrid ', 2, (SELECT CountryID FROM Country WHERE Name = 'Spain'), 1),
+('Bayern Munich ', 3, (SELECT CountryID FROM Country WHERE Name = 'Germany'), 1),
+('PSG ', 4, (SELECT CountryID FROM Country WHERE Name = 'France'), 1),
+('AC Milan ', 5, (SELECT CountryID FROM Country WHERE Name = 'Italy'), 1);
 
 -- Players
 INSERT INTO Player (Name, DateOfBirth, NationalityCountryID) VALUES

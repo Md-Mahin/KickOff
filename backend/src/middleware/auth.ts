@@ -78,8 +78,10 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
       req.auth = { userId: user.userId, sessionId, role: user.role };
     }
   } catch {
-    // Public endpoints continue without personalization when a cookie is stale.
+    // Public endpoints continue without personalization ...............
   }
 
   return next();
 }
+
+// this is the ai written code. of auth.ts now I want to write it with my own hand now guide me from the scratch of this portion what am I going to write and what I need to write in Bangla step by step and the reason and concept behind those its not neccessary the code I wlill write willl be same to same as the code I have just given you. I will write a code myself that looks like a human written code

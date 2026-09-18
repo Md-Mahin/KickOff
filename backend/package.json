@@ -8,7 +8,8 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "tsx src/db/seed.ts",
-    "sync-api": "tsx scripts/syncApiFootball.ts"
+    "sync-api": "tsx scripts/syncApiFootball.ts",
+    "sync-events": "tsx scripts/syncEvents.ts"
   },
   "keywords": [],
   "author": "",

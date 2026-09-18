@@ -26,6 +26,7 @@ CREATE TABLE Club (
 CREATE TABLE Team (
     TeamID        SERIAL PRIMARY KEY,
     Name          VARCHAR(150) NOT NULL,
+    Logo          TEXT,
     ClubID        INT REFERENCES Club(ClubID),
     CountryID     INT REFERENCES Country(CountryID),
     FederationID  INT REFERENCES Federation(FederationID)
