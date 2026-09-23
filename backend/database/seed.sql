@@ -97,13 +97,13 @@ INSERT INTO MatchOfficiating (MatchID, RefereeID, Role, Status) VALUES
 (2, 2, 'Main', 'Confirmed');
 
 -- Lineups
-INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status) VALUES
-(1, 1, 1, 'Starter'),
-(1, 1, 2, 'Starter'),
-(1, 2, 3, 'Starter'),
-(1, 2, 4, 'Starter'),
-(2, 3, 5, 'Starter'),
-(2, 4, 6, 'Starter');
+INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation) VALUES
+(1, 1, 1, 'Starter', '4-2-3-1'),
+(1, 1, 2, 'Starter', '4-2-3-1'),
+(1, 2, 3, 'Starter', '4-3-3'),
+(1, 2, 4, 'Starter', '4-3-3'),
+(2, 3, 5, 'Starter', '3-5-2'),
+(2, 4, 6, 'Starter', '4-4-2');
 
 -- Events
 INSERT INTO Event (MatchID, PlayerID, TeamID, EventTime, EventType) VALUES

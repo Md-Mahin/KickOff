@@ -436,7 +436,7 @@ export async function getMatchLineups(fixtureId: number) {
       // Get Lineup Players
       const lineupRes = await pool.query(
         `
-        SELECT l.Status, p.PlayerID, p.Name
+        SELECT l.Status, l.Formation, p.PlayerID, p.Name
         FROM Lineup l
         JOIN Player p ON l.PlayerID = p.PlayerID
         WHERE l.MatchID = $1 AND l.TeamID = $2
@@ -446,16 +446,28 @@ export async function getMatchLineups(fixtureId: number) {
 
       const starters: any[] = [];
       const substitutes: any[] = [];
+      let dbFormation = "4-3-3"; // default fallback
 
+      let starterCount = 0;
       lineupRes.rows.forEach((row: any) => {
+        if (row.formation) dbFormation = row.formation;
+        
+        // Deterministically mock positions if they don't exist in DB so players spread across the pitch
+        const mockPositions = ["G", "D", "D", "D", "D", "M", "M", "M", "F", "F", "F"];
+        
+        let pos = "M"; // default
+        if (row.status === 'Starter') {
+          pos = mockPositions[starterCount % mockPositions.length];
+        }
+
         const playerObj = {
           id: row.playerid,
           name: row.name,
           photo: null,
-          number: null,
-          position: null,
+          number: (row.playerid % 99) + 1,
+          position: pos,
           grid: null,
-          rating: null,
+          rating: (Math.random() * 3 + 6).toFixed(1), // mock rating between 6.0 and 9.0
           goals: 0,
           assists: 0,
           yellowCards: 0,
@@ -464,6 +476,7 @@ export async function getMatchLineups(fixtureId: number) {
 
         if (row.status === 'Starter') {
           starters.push(playerObj);
+          starterCount++;
         } else {
           substitutes.push(playerObj);
         }
@@ -475,7 +488,7 @@ export async function getMatchLineups(fixtureId: number) {
           name: teamRow.name,
           logo: teamRow.logo,
         },
-        formation: "4-3-3", // Mock formation for now
+        formation: dbFormation,
         coach: {
           name: "Manager of " + teamRow.name,
           photo: null,

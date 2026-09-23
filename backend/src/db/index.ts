@@ -21,6 +21,15 @@ export async function initializeDatabase() {
     ALTER TABLE Users
       ADD COLUMN IF NOT EXISTS Role VARCHAR(20) NOT NULL DEFAULT 'fan';
 
+    ALTER TABLE Lineup
+      ADD COLUMN IF NOT EXISTS Formation VARCHAR(20);
+
+    -- Ensure seeded data has a formation
+    UPDATE Lineup SET Formation = '4-2-3-1' WHERE MatchID = 1 AND TeamID = 1 AND Formation IS NULL;
+    UPDATE Lineup SET Formation = '4-3-3' WHERE MatchID = 1 AND TeamID = 2 AND Formation IS NULL;
+    UPDATE Lineup SET Formation = '3-5-2' WHERE MatchID = 2 AND TeamID = 3 AND Formation IS NULL;
+    UPDATE Lineup SET Formation = '4-4-2' WHERE MatchID = 2 AND TeamID = 4 AND Formation IS NULL;
+
     CREATE TABLE IF NOT EXISTS UserSessions (
       SessionID UUID PRIMARY KEY,
       UserID INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,

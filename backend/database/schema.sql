@@ -107,6 +107,7 @@ CREATE TABLE Lineup (
     TeamID        INT NOT NULL REFERENCES Team(TeamID),
     PlayerID      INT NOT NULL REFERENCES Player(PlayerID),
     Status        VARCHAR(10) NOT NULL CHECK (Status IN ('Starter','Sub')),
+    Formation     VARCHAR(20),
     PRIMARY KEY (MatchID, TeamID, PlayerID)
 );
 
