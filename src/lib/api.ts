@@ -2,6 +2,7 @@ import type {
   LeagueGroup,
   MatchStatus,
   MatchWithLeague,
+  MatchEvent,
 } from "@/lib/matches"
 
 const API_URL =
@@ -201,6 +202,30 @@ export async function getPlayersCatalog(): Promise<PlayerEntry[]> {
     if (!response.ok) return []
     const data = (await response.json()) as { players: PlayerEntry[] }
     return data.players ?? []
+  } catch {
+    return []
+  }
+}
+export async function getMatchEvents(
+  id: number
+): Promise<MatchEvent[]> {
+  try {
+    const response = await fetch(
+      `${API_URL}/api/matches/${id}/events`,
+      {
+        cache: "no-store",
+      }
+    )
+
+    if (!response.ok) {
+      return []
+    }
+
+    const data = (await response.json()) as {
+      events: MatchEvent[]
+    }
+
+    return data.events ?? []
   } catch {
     return []
   }

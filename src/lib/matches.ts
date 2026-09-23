@@ -22,3 +22,13 @@ export type MatchWithLeague = Match & {
   league: string
   country: string
 }
+export type MatchEvent = {
+  eventid: number
+  eventtime: number | null
+  eventtype: "Goal" | "Card" | "Foul"
+  playername: string | null
+  teamname: string
+  goaltype: string | null
+  assistplayername: string | null
+  cardtype: "Yellow" | "Red" | null
+}

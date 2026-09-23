@@ -4,6 +4,8 @@ import {
   getMatchById,
   getPopularFixtures,
   getFavouriteFixtures,
+  getMatchEvents,
+  syncMatchEvents,
 } from "../services/footballService";
 import { optionalAuth, requireAuth } from "../middleware/auth";
 import { pool } from "../db";
@@ -61,6 +63,28 @@ router.get("/", optionalAuth, async (req, res) => {
   }
 });
 
+
+router.get("/:id/events", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: "Invalid match ID" });
+    }
+
+    let events = await getMatchEvents(id);
+
+    if (events.length === 0) {
+      await syncMatchEvents(id);
+      events = await getMatchEvents(id);
+    }
+
+    res.json({ events });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch match events" });
+  }
+});
 // GET /api/matches/:id
 router.get("/:id", async (req, res) => {
   try {

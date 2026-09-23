@@ -81,6 +81,9 @@ async function fetchByDate(date: string) {
   const items = await apiFetch(`/fixtures?date=${date}`);
   return items.map(mapApiItem);
 }
+export async function fetchEvents(fixtureId: number) {
+  return apiFetch(`/fixtures/events?fixture=${fixtureId}`);
+}
 
 async function fetchById(id: number) {
   const items = await apiFetch(`/fixtures?id=${id}`);
@@ -208,7 +211,207 @@ export async function getMatchById(id: number) {
   // 3. Fallback
   return FALLBACK.find(m => m.fixture.id === id) ?? null;
 }
+export async function getMatchEvents(fixtureId: number) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      e.EventID,
+      e.EventTime,
+      e.EventType,
+      p.Name AS PlayerName,
+      t.Name AS TeamName,
+      g.GoalType,
+      ap.Name AS AssistPlayerName,
+      c.CardType
+    FROM Event e
+    JOIN Match m ON e.MatchID = m.MatchID
+    JOIN Team t ON e.TeamID = t.TeamID
+    LEFT JOIN Player p ON e.PlayerID = p.PlayerID
+    LEFT JOIN Goal g ON e.EventID = g.EventID
+    LEFT JOIN Player ap ON g.AssistPlayerID = ap.PlayerID
+    LEFT JOIN Card c ON e.EventID = c.EventID
+    WHERE m.ApiFixtureID = $1
+    ORDER BY e.EventTime ASC
+    `,
+    [fixtureId]
+  )
 
+  return rows
+}
+export async function syncMatchEvents(fixtureId: number) {
+  const apiResult = await fetchEvents(fixtureId);
+
+  const events = Array.isArray(apiResult) ? apiResult : [];
+
+  if (events.length === 0) {
+    return;
+  }
+
+  const matchResult = await pool.query(
+    `
+    SELECT MatchID
+    FROM Match
+    WHERE ApiFixtureID = $1
+    `,
+    [fixtureId]
+  );
+
+  if (matchResult.rows.length === 0) {
+    return;
+  }
+
+  const matchId = matchResult.rows[0].matchid;
+
+  for (const event of events) {
+    const elapsed = event.time?.elapsed ?? null;
+    const teamApiId = event.team?.id ?? null;
+    const playerApiId = event.player?.id ?? null;
+    const assistApiId = event.assist?.id ?? null;
+
+    let eventType: "Goal" | "Card" | "Foul" | null = null;
+
+    const type = event.type?.toLowerCase();
+
+    if (type === "goal") eventType = "Goal";
+    else if (type === "card") eventType = "Card";
+    else if (type === "foul") eventType = "Foul";
+
+    if (!eventType) continue;
+
+    const teamResult = await pool.query(
+      `
+      SELECT TeamID
+      FROM Team
+      WHERE ApiTeamID = $1
+      `,
+      [teamApiId]
+    );
+
+    const teamId =
+      teamResult.rows.length > 0 ? teamResult.rows[0].teamid : null;
+
+    const playerResult = playerApiId
+      ? await pool.query(
+          `
+          SELECT PlayerID
+          FROM Player
+          WHERE ApiPlayerID = $1
+          `,
+          [playerApiId]
+        )
+      : { rows: [] };
+
+    const playerId =
+      playerResult.rows.length > 0
+        ? playerResult.rows[0].playerid
+        : null;
+
+    const existingEvent = await pool.query(
+      `
+      SELECT EventID
+      FROM Event
+      WHERE MatchID = $1
+        AND EventTime IS NOT DISTINCT FROM $2
+        AND EventType = $3
+        AND TeamID IS NOT DISTINCT FROM $4
+        AND PlayerID IS NOT DISTINCT FROM $5
+      LIMIT 1
+      `,
+      [matchId, elapsed, eventType, teamId, playerId]
+    );
+
+    let eventId: number;
+
+    if (existingEvent.rows.length > 0) {
+      eventId = existingEvent.rows[0].eventid;
+    } else {
+      const insertedEvent = await pool.query(
+        `
+        INSERT INTO Event (
+          MatchID,
+          PlayerID,
+          TeamID,
+          EventTime,
+          EventType
+        )
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING EventID
+        `,
+        [matchId, playerId, teamId, elapsed, eventType]
+      );
+
+      eventId = insertedEvent.rows[0].eventid;
+    }
+
+    if (eventType === "Goal") {
+      const assistResult = assistApiId
+        ? await pool.query(
+            `
+            SELECT PlayerID
+            FROM Player
+            WHERE ApiPlayerID = $1
+            `,
+            [assistApiId]
+          )
+        : { rows: [] };
+
+      const assistPlayerId =
+        assistResult.rows.length > 0
+          ? assistResult.rows[0].playerid
+          : null;
+
+      await pool.query(
+        `
+        INSERT INTO Goal (
+          EventID,
+          AssistPlayerID,
+          GoalType
+        )
+        VALUES ($1, $2, $3)
+        ON CONFLICT (EventID)
+        DO UPDATE SET
+          AssistPlayerID = EXCLUDED.AssistPlayerID,
+          GoalType = EXCLUDED.GoalType
+        `,
+        [eventId, assistPlayerId, event.detail ?? null]
+      );
+    }
+
+    if (eventType === "Card") {
+      let cardType: "Yellow" | "Red" | null = null;
+
+      if (event.detail?.toLowerCase().includes("yellow")) {
+        cardType = "Yellow";
+      } else if (event.detail?.toLowerCase().includes("red")) {
+        cardType = "Red";
+      }
+
+      if (cardType) {
+        await pool.query(
+          `
+          INSERT INTO Card (EventID, CardType)
+          VALUES ($1, $2)
+          ON CONFLICT (EventID)
+          DO UPDATE SET CardType = EXCLUDED.CardType
+          `,
+          [eventId, cardType]
+        );
+      }
+    }
+
+    if (eventType === "Foul") {
+      await pool.query(
+        `
+        INSERT INTO Foul (EventID, FouledPlayerID)
+        VALUES ($1, $2)
+        ON CONFLICT (EventID)
+        DO UPDATE SET FouledPlayerID = EXCLUDED.FouledPlayerID
+        `,
+        [eventId, null]
+      );
+    }
+  }
+}
 /** Team catalog for signup (national + club, sourced from today's fixtures). */
 export async function getTeamsCatalog() {
   const teamMap = new Map<number, { id: number; name: string; logo: string | null; type: "national" | "club" }>();
