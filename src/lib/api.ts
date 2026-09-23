@@ -3,6 +3,7 @@ import type {
   MatchStatus,
   MatchWithLeague,
   MatchEvent,
+  MatchLineup,
 } from "@/lib/matches"
 
 const API_URL =
@@ -12,6 +13,11 @@ type ApiFixture = {
   fixture: {
     id: number
     date?: string | null
+    venue?: {
+      name: string | null
+      city: string | null
+      country: string | null
+    } | null
     status: {
       short: string
       elapsed: number | null
@@ -71,6 +77,13 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
   return {
     id: fixture.fixture.id,
     startTime: fixture.fixture.date ?? undefined,
+    venue: fixture.fixture.venue?.name
+      ? {
+          name: fixture.fixture.venue.name,
+          city: fixture.fixture.venue.city,
+          country: fixture.fixture.venue.country,
+        }
+      : undefined,
     
     homeTeam: fixture.teams.home.name,
     awayTeam: fixture.teams.away.name,
@@ -93,6 +106,40 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
     country: fixture.league.country ?? "International",
   }
 }
+
+  const TOP_LEAGUE_ORDER = [
+    "premier league",
+    "champions league",
+    "la liga",
+    "world cup",
+    "bundesliga",
+    "ligue 1",
+    "serie a",
+    "europa league",
+    "copa del rey",
+    "copa america",
+    "uefa euro",
+    "nations league",
+    "africa cup",
+    "asian cup",
+    "gold cup",
+    "concacaf",
+    "olympic",
+    "qualification",
+    "friendlies",
+  ]
+
+  function leagueOrder(name: string, country: string) {
+    const normalized = name.toLowerCase()
+    const normalizedCountry = country.toLowerCase()
+
+    if (normalized.includes("premier league") && !normalizedCountry.includes("england")) {
+      return TOP_LEAGUE_ORDER.length
+    }
+
+    const index = TOP_LEAGUE_ORDER.findIndex((league) => normalized.includes(league))
+    return index === -1 ? TOP_LEAGUE_ORDER.length : index
+  }
 
 export async function getMatches(cookie?: string): Promise<LeagueGroup[]> {
   let data: { response?: ApiFixture[] }
@@ -134,7 +181,11 @@ export async function getMatches(cookie?: string): Promise<LeagueGroup[]> {
     groups.set(key, group)
   }
 
-  return [...groups.values()]
+    return [...groups.values()].sort((left, right) => {
+      const priorityDifference = leagueOrder(left.league, left.country) - leagueOrder(right.league, right.country)
+      if (priorityDifference !== 0) return priorityDifference
+      return left.league.localeCompare(right.league)
+    })
 }
 
 export async function getMatchById(
@@ -228,6 +279,21 @@ export async function getMatchEvents(
     }
 
     return data.events ?? []
+  } catch {
+    return []
+  }
+}
+
+export async function getMatchLineups(id: number): Promise<MatchLineup[]> {
+  try {
+    const response = await fetch(`${API_URL}/api/matches/${id}/lineups`, {
+      cache: "no-store",
+    })
+
+    if (!response.ok) return []
+
+    const data = (await response.json()) as { lineups: MatchLineup[] }
+    return data.lineups ?? []
   } catch {
     return []
   }
