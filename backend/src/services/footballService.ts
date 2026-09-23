@@ -58,6 +58,7 @@ function mapApiItem(item: any) {
   return {
     fixture: {
       id: item.fixture.id,
+      date: item.fixture.date,
       status: { short: item.fixture.status.short, elapsed: item.fixture.status.elapsed },
     },
     league: { id: item.league.id, name: item.league.name, country: item.league.country },
@@ -110,7 +111,7 @@ function mapDbRow(row: any) {
   if (mins >= 0 && mins < 120) { status = "LIVE"; elapsed = Math.min(mins, 90); }
   else if (mins >= 120) { status = "FT"; elapsed = 90; }
   return {
-    fixture: { id: row.matchid, status: { short: status, elapsed } },
+    fixture: { id: row.matchid, date: row.matchdate, status: { short: status, elapsed } },
     league: { id: row.tournamentid, name: row.tournamentname, country: "International" },
     teams: {
       home: { id: row.hometeamid, name: row.hometeamname, logo: row.hometeamlogo },
@@ -212,6 +213,49 @@ export async function getMatchById(id: number) {
   return FALLBACK.find(m => m.fixture.id === id) ?? null;
 }
 export async function getMatchEvents(fixtureId: number) {
+  // The timeline belongs to the selected fixture, so fetch it only from the
+  // detail request instead of depending on a pre-synced local match row.
+  try {
+    const apiEvents = await fetchEvents(fixtureId)
+
+    return apiEvents
+      .map((event: any, index: number) => {
+        const type = event.type?.toLowerCase()
+        let eventType: "Goal" | "Card" | "Foul" | null = null
+
+        if (type === "goal") eventType = "Goal"
+        else if (type === "card") eventType = "Card"
+        else if (type === "foul") eventType = "Foul"
+
+        if (!eventType) return null
+
+        const detail = event.detail ?? ""
+        const cardDetail = detail.toLowerCase()
+
+        return {
+          eventid: event.id ?? `${fixtureId}-${index}`,
+          eventtime: event.time?.elapsed ?? null,
+          eventtype: eventType,
+          playername: event.player?.name ?? null,
+          teamname: event.team?.name ?? "",
+          goaltype: eventType === "Goal" ? detail || null : null,
+          assistplayername: event.assist?.name ?? null,
+          cardtype:
+            eventType === "Card"
+              ? cardDetail.includes("red")
+                ? "Red"
+                : cardDetail.includes("yellow")
+                  ? "Yellow"
+                  : null
+              : null,
+        }
+      })
+      .filter((event): event is NonNullable<typeof event> => event !== null)
+  } catch (error) {
+    console.warn("API getMatchEvents:", (error as Error).message)
+  }
+
+  // Keep locally synced events available when API-Football is unavailable.
   const { rows } = await pool.query(
     `
     SELECT
@@ -225,10 +269,10 @@ export async function getMatchEvents(fixtureId: number) {
       c.CardType
     FROM Event e
     JOIN Match m ON e.MatchID = m.MatchID
-    JOIN Team t ON e.TeamID = t.TeamID
+    LEFT JOIN Team t ON e.TeamID = t.TeamID
     LEFT JOIN Player p ON e.PlayerID = p.PlayerID
     LEFT JOIN Goal g ON e.EventID = g.EventID
-    LEFT JOIN Player ap ON g.AssistPlayerID = ap.PlayerID
+    LEFT JOIN Player ap ON ap.PlayerID = g.AssistPlayerID
     LEFT JOIN Card c ON e.EventID = c.EventID
     WHERE m.ApiFixtureID = $1
     ORDER BY e.EventTime ASC
@@ -236,7 +280,16 @@ export async function getMatchEvents(fixtureId: number) {
     [fixtureId]
   )
 
-  return rows
+  return rows.map((row: any) => ({
+    eventid: row.eventid,
+    eventtime: row.eventtime,
+    eventtype: row.eventtype,
+    playername: row.playername,
+    teamname: row.teamname ?? "",
+    goaltype: row.goaltype,
+    assistplayername: row.assistplayername,
+    cardtype: row.cardtype,
+  }))
 }
 export async function syncMatchEvents(fixtureId: number) {
   const apiResult = await fetchEvents(fixtureId);

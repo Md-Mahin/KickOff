@@ -5,7 +5,6 @@ import {
   getPopularFixtures,
   getFavouriteFixtures,
   getMatchEvents,
-  syncMatchEvents,
 } from "../services/footballService";
 import { optionalAuth, requireAuth } from "../middleware/auth";
 import { pool } from "../db";
@@ -72,13 +71,7 @@ router.get("/:id/events", async (req, res) => {
       return res.status(400).json({ message: "Invalid match ID" });
     }
 
-    let events = await getMatchEvents(id);
-
-    if (events.length === 0) {
-      await syncMatchEvents(id);
-      events = await getMatchEvents(id);
-    }
-
+    const events = await getMatchEvents(id);
     res.json({ events });
   } catch (error) {
     console.error(error);

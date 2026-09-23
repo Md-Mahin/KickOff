@@ -11,6 +11,7 @@ const API_URL =
 type ApiFixture = {
   fixture: {
     id: number
+    date?: string | null
     status: {
       short: string
       elapsed: number | null
@@ -69,6 +70,7 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
 
   return {
     id: fixture.fixture.id,
+    startTime: fixture.fixture.date ?? undefined,
     
     homeTeam: fixture.teams.home.name,
     awayTeam: fixture.teams.away.name,

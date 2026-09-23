@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import type { Match, LeagueGroup } from "@/lib/matches"
 import Image from "next/image"
+import { LocalMatchTime } from "@/components/matches/local-match-time"
 
 function MatchStatus({ match }: { match: Match }) {
   if (match.status === "LIVE") {
@@ -54,6 +55,11 @@ function MatchRow({ match }: { match: Match }) {
       </div>
       <div className="ml-4 flex w-20 flex-col items-end gap-2">
         <MatchStatus match={match} />
+        {match.startTime && (
+          <span className="text-xs text-muted-foreground">
+            <LocalMatchTime startTime={match.startTime} />
+          </span>
+        )}
       </div>
     </div>
   )
@@ -150,6 +156,7 @@ export function MatchList({ leagues }: { leagues: LeagueGroup[] }) {
                     <div key={match.id}>
                       <Link
                         href={`/match/${match.id}`}
+                        prefetch={false}
                         className="block transition hover:bg-muted/50"
                       >
                         <MatchRow match={match} />

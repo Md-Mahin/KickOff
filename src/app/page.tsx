@@ -65,7 +65,7 @@ function MatchRow({ match }: { match: Match }) {
 // ── Featured section (most popular or favourites) ─────────────────────────────
 function FeaturedMatchCard({ match }: { match: MatchWithLeague }) {
   return (
-    <Link href={`/match/${match.id}`} className="block">
+    <Link href={`/match/${match.id}`} prefetch={false} className="block">
       <div className="rounded-xl border border-border bg-card p-4 transition hover:bg-muted/50 min-w-[160px]">
         <p className="mb-3 truncate text-[11px] font-medium text-muted-foreground">{match.league}</p>
         <div className="space-y-2">

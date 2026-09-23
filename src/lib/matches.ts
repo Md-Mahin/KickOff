@@ -10,6 +10,7 @@ export type Match = {
   awayScore: number
   status: MatchStatus
   minute?: string
+  startTime?: string
 }
 
 export type LeagueGroup = {

@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { getMatchById, getMatchEvents } from "@/lib/api"
 import type { MatchWithLeague } from "@/lib/matches"
 import Image from "next/image"
+import { LocalMatchTime } from "@/components/matches/local-match-time"
 
 function MatchStatusBadge({ match }: { match: MatchWithLeague }) {
   if (match.status === "LIVE") {
@@ -117,6 +118,12 @@ export default async function MatchPage({
                 {match.minute && (
                   <div className="mt-2 text-sm text-muted-foreground">
                     {match.minute}
+                  </div>
+                )}
+
+                {match.startTime && (
+                  <div className="mt-2 text-sm text-muted-foreground">
+                    Kickoff <LocalMatchTime startTime={match.startTime} />
                   </div>
                 )}
               </div>
