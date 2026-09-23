@@ -436,7 +436,7 @@ export async function getMatchLineups(fixtureId: number) {
       // Get Lineup Players
       const lineupRes = await pool.query(
         `
-        SELECT l.Status, l.Formation, p.PlayerID, p.Name
+        SELECT l.Status, p.PlayerID, p.Name
         FROM Lineup l
         JOIN Player p ON l.PlayerID = p.PlayerID
         WHERE l.MatchID = $1 AND l.TeamID = $2
@@ -446,12 +446,9 @@ export async function getMatchLineups(fixtureId: number) {
 
       const starters: any[] = [];
       const substitutes: any[] = [];
-      let dbFormation = "4-3-3"; // default fallback
 
       let starterCount = 0;
       lineupRes.rows.forEach((row: any) => {
-        if (row.formation) dbFormation = row.formation;
-        
         // Deterministically mock positions if they don't exist in DB so players spread across the pitch
         const mockPositions = ["G", "D", "D", "D", "D", "M", "M", "M", "F", "F", "F"];
         
@@ -488,7 +485,7 @@ export async function getMatchLineups(fixtureId: number) {
           name: teamRow.name,
           logo: teamRow.logo,
         },
-        formation: dbFormation,
+        formation: "4-3-3", // Mock formation for now
         coach: {
           name: "Manager of " + teamRow.name,
           photo: null,
