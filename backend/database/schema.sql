@@ -36,7 +36,9 @@ CREATE TABLE Player (
     PlayerID      SERIAL PRIMARY KEY,
     Name          VARCHAR(150) NOT NULL,
     DateOfBirth   DATE,
-    NationalityCountryID INT REFERENCES Country(CountryID)
+    NationalityCountryID INT REFERENCES Country(CountryID),
+    Position      VARCHAR(10),
+    Photo         TEXT
 );
 
 CREATE TABLE TeamPlayerHistory (
@@ -108,6 +110,8 @@ CREATE TABLE Lineup (
     PlayerID      INT NOT NULL REFERENCES Player(PlayerID),
     Status        VARCHAR(10) NOT NULL CHECK (Status IN ('Starter','Sub')),
     Formation     VARCHAR(20),
+    Position      VARCHAR(10),
+    JerseyNumber  INT,
     PRIMARY KEY (MatchID, TeamID, PlayerID)
 );
 

@@ -85,13 +85,19 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
     id: fixture.fixture.id,
     startTime: fixture.fixture.date ?? undefined,
     referees: fixture.referees,
-    venue: fixture.fixture.venue?.name
+    venue: (fixture.fixture?.venue?.name
       ? {
           name: fixture.fixture.venue.name,
           city: fixture.fixture.venue.city,
           country: fixture.fixture.venue.country,
         }
-      : undefined,
+      : (fixture as any).venue?.name
+      ? {
+          name: (fixture as any).venue.name,
+          city: (fixture as any).venue.city,
+          country: (fixture as any).venue.country,
+        }
+      : undefined),
     
     homeTeam: fixture.teams.home.name,
     awayTeam: fixture.teams.away.name,

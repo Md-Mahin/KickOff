@@ -44,24 +44,41 @@ INSERT INTO Team (Name, ClubID, CountryID, FederationID) VALUES
 ('AC Milan ', 5, (SELECT CountryID FROM Country WHERE Name = 'Italy'), 1);
 
 -- Players
-INSERT INTO Player (Name, DateOfBirth, NationalityCountryID) VALUES
-('Bukayo Saka', '2001-09-05', (SELECT CountryID FROM Country WHERE Name = 'England')),
-('Martin Odegaard', '1998-12-17', (SELECT CountryID FROM Country WHERE Name = 'England')),
-('Vinicius Junior', '2000-07-12', (SELECT CountryID FROM Country WHERE Name = 'Brazil')),
-('Jude Bellingham', '2003-06-29', (SELECT CountryID FROM Country WHERE Name = 'England')),
-('Harry Kane', '1993-07-28', (SELECT CountryID FROM Country WHERE Name = 'England')),
-('Kylian Mbappe', '1998-12-20', (SELECT CountryID FROM Country WHERE Name = 'France')),
-('Rafael Leao', '1999-06-10', (SELECT CountryID FROM Country WHERE Name = 'Portugal'));
+INSERT INTO Player (PlayerID, Name, DateOfBirth, NationalityCountryID, Position) VALUES
+  (1, 'David Raya', '1995-09-15', (SELECT CountryID FROM Country WHERE Name = 'Spain'), 'G'),
+  (2, 'Ben White', '1997-10-08', (SELECT CountryID FROM Country WHERE Name = 'England'), 'D'),
+  (3, 'William Saliba', '2001-03-24', (SELECT CountryID FROM Country WHERE Name = 'France'), 'D'),
+  (4, 'Gabriel Magalhaes', '1997-12-19', (SELECT CountryID FROM Country WHERE Name = 'Brazil'), 'D'),
+  (5, 'Oleksandr Zinchenko', '1996-12-15', (SELECT CountryID FROM Country WHERE Name = 'England'), 'D'),
+  (6, 'Declan Rice', '1999-01-14', (SELECT CountryID FROM Country WHERE Name = 'England'), 'M'),
+  (7, 'Martin Odegaard', '1998-12-17', (SELECT CountryID FROM Country WHERE Name = 'England'), 'M'),
+  (8, 'Kai Havertz', '1999-06-11', (SELECT CountryID FROM Country WHERE Name = 'Germany'), 'M'),
+  (9, 'Bukayo Saka', '2001-09-05', (SELECT CountryID FROM Country WHERE Name = 'England'), 'F'),
+  (10, 'Gabriel Jesus', '1997-04-03', (SELECT CountryID FROM Country WHERE Name = 'Brazil'), 'F'),
+  (11, 'Gabriel Martinelli', '2001-06-18', (SELECT CountryID FROM Country WHERE Name = 'Brazil'), 'F'),
+  (12, 'Thibaut Courtois', '1992-05-11', (SELECT CountryID FROM Country WHERE Name = 'Spain'), 'G'),
+  (13, 'Dani Carvajal', '1992-01-11', (SELECT CountryID FROM Country WHERE Name = 'Spain'), 'D'),
+  (14, 'Antonio Rudiger', '1993-03-03', (SELECT CountryID FROM Country WHERE Name = 'Germany'), 'D'),
+  (15, 'Eder Militao', '1998-01-18', (SELECT CountryID FROM Country WHERE Name = 'Brazil'), 'D'),
+  (16, 'Ferland Mendy', '1995-06-08', (SELECT CountryID FROM Country WHERE Name = 'France'), 'D'),
+  (17, 'Federico Valverde', '1998-07-22', (SELECT CountryID FROM Country WHERE Name = 'Spain'), 'M'),
+  (18, 'Aurelien Tchouameni', '2000-01-27', (SELECT CountryID FROM Country WHERE Name = 'France'), 'M'),
+  (19, 'Jude Bellingham', '2003-06-29', (SELECT CountryID FROM Country WHERE Name = 'England'), 'M'),
+  (20, 'Rodrygo', '2001-01-09', (SELECT CountryID FROM Country WHERE Name = 'Brazil'), 'F'),
+  (21, 'Kylian Mbappe', '1998-12-20', (SELECT CountryID FROM Country WHERE Name = 'France'), 'F'),
+  (22, 'Vinicius Junior', '2000-07-12', (SELECT CountryID FROM Country WHERE Name = 'Brazil'), 'F'),
+  (23, 'Harry Kane', '1993-07-28', (SELECT CountryID FROM Country WHERE Name = 'England'), 'F'),
+  (24, 'Rafael Leao', '1999-06-10', (SELECT CountryID FROM Country WHERE Name = 'Portugal'), 'F');
 
 -- Team Player History (Current Roster)
 INSERT INTO TeamPlayerHistory (PlayerID, TeamID, BeginDate, EndDate, Type) VALUES
-(1, 1, '2019-07-01', NULL, 'Permanent'),
-(2, 1, '2021-08-20', NULL, 'Permanent'),
-(3, 2, '2018-07-12', NULL, 'Permanent'),
-(4, 2, '2023-07-01', NULL, 'Permanent'),
-(5, 3, '2023-08-12', NULL, 'Permanent'),
-(6, 4, '2018-07-01', NULL, 'Permanent'),
-(7, 5, '2019-08-01', NULL, 'Permanent');
+  (9, 1, '2019-07-01', NULL, 'Permanent'),
+  (7, 1, '2021-08-20', NULL, 'Permanent'),
+  (22, 2, '2018-07-12', NULL, 'Permanent'),
+  (19, 2, '2023-07-01', NULL, 'Permanent'),
+  (23, 3, '2023-08-12', NULL, 'Permanent'),
+  (21, 2, '2024-07-01', NULL, 'Permanent'),
+  (24, 5, '2019-08-01', NULL, 'Permanent');
 
 -- Referees
 INSERT INTO Referee (Name, Level, NationalityCountryID) VALUES
@@ -97,13 +114,31 @@ INSERT INTO MatchOfficiating (MatchID, RefereeID, Role, Status) VALUES
 (2, 2, 'Main', 'Confirmed');
 
 -- Lineups
-INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation) VALUES
-(1, 1, 1, 'Starter', '4-2-3-1'),
-(1, 1, 2, 'Starter', '4-2-3-1'),
-(1, 2, 3, 'Starter', '4-3-3'),
-(1, 2, 4, 'Starter', '4-3-3'),
-(2, 3, 5, 'Starter', '3-5-2'),
-(2, 4, 6, 'Starter', '4-4-2');
+INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation, Position, JerseyNumber) VALUES
+-- Arsenal Starters (4-3-3)
+(1, 1, 1, 'Starter', '4-3-3', 'G', 22),
+(1, 1, 2, 'Starter', '4-3-3', 'D', 4),
+(1, 1, 3, 'Starter', '4-3-3', 'D', 2),
+(1, 1, 4, 'Starter', '4-3-3', 'D', 6),
+(1, 1, 5, 'Starter', '4-3-3', 'D', 35),
+(1, 1, 6, 'Starter', '4-3-3', 'M', 41),
+(1, 1, 7, 'Starter', '4-3-3', 'M', 8),
+(1, 1, 8, 'Starter', '4-3-3', 'M', 29),
+(1, 1, 9, 'Starter', '4-3-3', 'F', 7),
+(1, 1, 10, 'Starter', '4-3-3', 'F', 9),
+(1, 1, 11, 'Starter', '4-3-3', 'F', 11),
+-- Real Madrid Starters (4-3-3)
+(1, 2, 12, 'Starter', '4-3-3', 'G', 1),
+(1, 2, 13, 'Starter', '4-3-3', 'D', 2),
+(1, 2, 14, 'Starter', '4-3-3', 'D', 22),
+(1, 2, 15, 'Starter', '4-3-3', 'D', 3),
+(1, 2, 16, 'Starter', '4-3-3', 'D', 23),
+(1, 2, 17, 'Starter', '4-3-3', 'M', 15),
+(1, 2, 18, 'Starter', '4-3-3', 'M', 14),
+(1, 2, 19, 'Starter', '4-3-3', 'M', 5),
+(1, 2, 20, 'Starter', '4-3-3', 'F', 11),
+(1, 2, 21, 'Starter', '4-3-3', 'F', 9),
+(1, 2, 22, 'Starter', '4-3-3', 'F', 7);
 
 -- Events
 INSERT INTO Event (MatchID, PlayerID, TeamID, EventTime, EventType) VALUES

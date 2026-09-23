@@ -22,13 +22,75 @@ export async function initializeDatabase() {
       ADD COLUMN IF NOT EXISTS Role VARCHAR(20) NOT NULL DEFAULT 'fan';
 
     ALTER TABLE Lineup
-      ADD COLUMN IF NOT EXISTS Formation VARCHAR(20);
+      ADD COLUMN IF NOT EXISTS Formation VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS Position VARCHAR(10),
+      ADD COLUMN IF NOT EXISTS JerseyNumber INT;
 
-    -- Ensure seeded data has a formation
-    UPDATE Lineup SET Formation = '4-2-3-1' WHERE MatchID = 1 AND TeamID = 1 AND Formation IS NULL;
-    UPDATE Lineup SET Formation = '4-3-3' WHERE MatchID = 1 AND TeamID = 2 AND Formation IS NULL;
+    ALTER TABLE Player
+      ADD COLUMN IF NOT EXISTS Position VARCHAR(10),
+      ADD COLUMN IF NOT EXISTS Photo TEXT;
+
+    -- Ensure seeded data has a formation and positions
+    UPDATE Lineup SET Formation = '4-3-3' WHERE MatchID = 1 AND Formation IS NULL;
     UPDATE Lineup SET Formation = '3-5-2' WHERE MatchID = 2 AND TeamID = 3 AND Formation IS NULL;
     UPDATE Lineup SET Formation = '4-4-2' WHERE MatchID = 2 AND TeamID = 4 AND Formation IS NULL;
+
+    -- Ensure Match 1 has full 11-player squads
+    INSERT INTO Player (PlayerID, Name, Position) VALUES
+      (1, 'David Raya', 'G'),
+      (2, 'Ben White', 'D'),
+      (3, 'William Saliba', 'D'),
+      (4, 'Gabriel Magalhaes', 'D'),
+      (5, 'Oleksandr Zinchenko', 'D'),
+      (6, 'Declan Rice', 'M'),
+      (7, 'Martin Odegaard', 'M'),
+      (8, 'Kai Havertz', 'M'),
+      (9, 'Bukayo Saka', 'F'),
+      (10, 'Gabriel Jesus', 'F'),
+      (11, 'Gabriel Martinelli', 'F'),
+      (12, 'Thibaut Courtois', 'G'),
+      (13, 'Dani Carvajal', 'D'),
+      (14, 'Antonio Rudiger', 'D'),
+      (15, 'Eder Militao', 'D'),
+      (16, 'Ferland Mendy', 'D'),
+      (17, 'Federico Valverde', 'M'),
+      (18, 'Aurelien Tchouameni', 'M'),
+      (19, 'Jude Bellingham', 'M'),
+      (20, 'Rodrygo', 'F'),
+      (21, 'Kylian Mbappe', 'F'),
+      (22, 'Vinicius Junior', 'F')
+    ON CONFLICT (PlayerID) DO UPDATE SET
+      Name = EXCLUDED.Name,
+      Position = EXCLUDED.Position;
+
+    INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation, Position, JerseyNumber) VALUES
+      (1, 1, 1, 'Starter', '4-3-3', 'G', 22),
+      (1, 1, 2, 'Starter', '4-3-3', 'D', 4),
+      (1, 1, 3, 'Starter', '4-3-3', 'D', 2),
+      (1, 1, 4, 'Starter', '4-3-3', 'D', 6),
+      (1, 1, 5, 'Starter', '4-3-3', 'D', 35),
+      (1, 1, 6, 'Starter', '4-3-3', 'M', 41),
+      (1, 1, 7, 'Starter', '4-3-3', 'M', 8),
+      (1, 1, 8, 'Starter', '4-3-3', 'M', 29),
+      (1, 1, 9, 'Starter', '4-3-3', 'F', 7),
+      (1, 1, 10, 'Starter', '4-3-3', 'F', 9),
+      (1, 1, 11, 'Starter', '4-3-3', 'F', 11),
+      (1, 2, 12, 'Starter', '4-3-3', 'G', 1),
+      (1, 2, 13, 'Starter', '4-3-3', 'D', 2),
+      (1, 2, 14, 'Starter', '4-3-3', 'D', 22),
+      (1, 2, 15, 'Starter', '4-3-3', 'D', 3),
+      (1, 2, 16, 'Starter', '4-3-3', 'D', 23),
+      (1, 2, 17, 'Starter', '4-3-3', 'M', 15),
+      (1, 2, 18, 'Starter', '4-3-3', 'M', 14),
+      (1, 2, 19, 'Starter', '4-3-3', 'M', 5),
+      (1, 2, 20, 'Starter', '4-3-3', 'F', 11),
+      (1, 2, 21, 'Starter', '4-3-3', 'F', 9),
+      (1, 2, 22, 'Starter', '4-3-3', 'F', 7)
+    ON CONFLICT (MatchID, TeamID, PlayerID) DO UPDATE SET
+      Status = EXCLUDED.Status,
+      Formation = EXCLUDED.Formation,
+      Position = EXCLUDED.Position,
+      JerseyNumber = EXCLUDED.JerseyNumber;
 
     CREATE TABLE IF NOT EXISTS UserSessions (
       SessionID UUID PRIMARY KEY,
