@@ -5,6 +5,7 @@ import path from "path";
 import matchRoutes from "./routes/matchRoutes";
 import authRoutes from "./routes/authRoutes";
 import userRoutes from "./routes/userRoutes";
+import searchRoutes from "./routes/searchRoutes";
 import { initializeDatabase, pool } from "./db";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
@@ -40,6 +41,7 @@ app.get("/api/test-db", async (_req, res) => {
 app.use("/api/matches", matchRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
+app.use("/api/search", searchRoutes);
 
 const PORT = process.env.PORT || 5000;
 

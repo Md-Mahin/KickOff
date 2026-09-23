@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import { Bell, Menu } from "lucide-react"
 import { useEffect, useState } from "react"
 
+import GlobalSearch from "./global-search"
+
 export default function Navbar() {
   const router = useRouter()
   const [signedIn, setSignedIn] = useState(false)
@@ -64,6 +66,8 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="absolute inset-y-0 right-0 flex items-center pr-2 sm:static sm:inset-auto sm:ml-6 sm:pr-0">
+
+            <GlobalSearch />
 
             {/* Notifications */}
             <button
