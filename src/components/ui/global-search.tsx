@@ -1,12 +1,14 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useRouter } from "next/navigation"
 import { Search, Star, Users } from "lucide-react"
 
 const FILTERS = ["All", "Team", "Player", "Match", "Competition", "News", "Manager", "Referee", "Venue"]
 
 type SearchResult = {
   id: string;
+  realId: number;
   name: string;
   followers: string;
   country: string;
@@ -17,6 +19,7 @@ type SearchResult = {
 }
 
 export default function GlobalSearch() {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const [activeFilter, setActiveFilter] = useState("All")
   const [searchQuery, setSearchQuery] = useState("")
@@ -146,6 +149,17 @@ export default function GlobalSearch() {
                 <div
                   key={item.id}
                   className="group flex items-center justify-between rounded-lg p-2 hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => {
+                    if (item.type === "Team") {
+                      router.push(`/team/${item.realId}`)
+                    } else if (item.type === "Player") {
+                      router.push(`/player/${item.realId}`)
+                    } else if (item.type === "Competition") {
+                      router.push(`/tournament/${item.realId}`)
+                    }
+                    setIsOpen(false)
+                    setSearchQuery("")
+                  }}
                 >
                   {/* Avatar */}
                   <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-gray-100">

@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation"
+import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { getMatchById, getMatchEvents, getMatchLineups } from "@/lib/api"
@@ -80,8 +81,16 @@ export default async function MatchPage({
       <main className="mx-auto max-w-5xl px-4 py-8">
 
         {/* League */}
-        <div className="mb-4 text-sm text-muted-foreground">
-          {match.league} • {match.country}
+        <div className="mb-4 text-sm text-muted-foreground flex items-center gap-1">
+          {match.leagueId ? (
+            <Link href={`/tournament/${match.leagueId}`} className="hover:underline hover:text-slate-900 font-medium">
+              {match.league}
+            </Link>
+          ) : (
+            <span className="font-medium">{match.league}</span>
+          )}
+          <span>•</span>
+          <span>{match.country}</span>
         </div>
 
         {/* Match header */}
@@ -107,7 +116,11 @@ export default async function MatchPage({
                 )}
 
                 <div className="mt-2 text-lg font-semibold">
-                  {match.homeTeam}
+                  {match.homeTeamId ? (
+                    <Link href={`/team/${match.homeTeamId}`} className="hover:underline hover:text-blue-600 transition-colors">
+                      {match.homeTeam}
+                    </Link>
+                  ) : match.homeTeam}
                 </div>
 
                 <div className="mt-1 text-xs text-muted-foreground">
@@ -149,7 +162,11 @@ export default async function MatchPage({
                 )}
 
                 <div className="mt-2 text-lg font-semibold">
-                  {match.awayTeam}
+                  {match.awayTeamId ? (
+                    <Link href={`/team/${match.awayTeamId}`} className="hover:underline hover:text-blue-600 transition-colors">
+                      {match.awayTeam}
+                    </Link>
+                  ) : match.awayTeam}
                 </div>
 
                 <div className="mt-1 text-xs text-muted-foreground">
@@ -196,6 +213,15 @@ export default async function MatchPage({
                 </div>
 
                 <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Referees</span>
+                  <span className="text-right">
+                    {match.referees && match.referees.length > 0
+                      ? match.referees.join(", ")
+                      : "Not available"}
+                  </span>
+                </div>
+
+                <div className="flex justify-between gap-4">
                   <span className="text-muted-foreground">Venue</span>
                   <span className="text-right">
                     {match.venue?.name ?? "Not available"}
@@ -238,12 +264,25 @@ export default async function MatchPage({
                       <div className="min-w-0">
                         <div className="font-medium">
                           {event.eventtype === "Goal"
-                            ? event.playername ?? "Goal"
+                            ? (event.playerid ? <Link href={`/player/${event.playerid}`} className="hover:underline text-blue-600">{event.playername}</Link> : event.playername ?? "Goal")
                             : event.eventtype === "Card"
-                              ? `${event.cardtype ?? ""} Card`
+                              ? (
+                                  <>
+                                    {event.cardtype ?? ""} Card for{" "}
+                                    {event.playerid && event.playername ? <Link href={`/player/${event.playerid}`} className="hover:underline text-blue-600">{event.playername}</Link> : event.playername ?? "Unknown"}
+                                  </>
+                                )
                               : event.eventtype === "Substitution"
-                                ? `${event.playername ?? "Player"} substituted`
-                                : "Foul"}
+                                ? (
+                                  <>
+                                    {event.playerid && event.playername ? <Link href={`/player/${event.playerid}`} className="hover:underline text-blue-600">{event.playername}</Link> : event.playername ?? "Player"} substituted
+                                  </>
+                                )
+                                : (
+                                  <>
+                                    Foul by {event.playerid && event.playername ? <Link href={`/player/${event.playerid}`} className="hover:underline text-blue-600">{event.playername}</Link> : event.playername ?? "Unknown"}
+                                  </>
+                                )}
                         </div>
 
                         <div className="text-sm text-muted-foreground">

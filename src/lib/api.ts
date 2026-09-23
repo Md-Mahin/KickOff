@@ -4,6 +4,9 @@ import type {
   MatchWithLeague,
   MatchEvent,
   MatchLineup,
+  TeamProfile,
+  PlayerProfile,
+  TournamentProfile,
 } from "@/lib/matches"
 
 const API_URL =
@@ -32,10 +35,12 @@ type ApiFixture = {
 
   teams: {
     home: {
+      id?: number
       name: string
       logo: string | null
     }
     away: {
+      id?: number
       name: string
       logo: string | null
     }
@@ -45,6 +50,8 @@ type ApiFixture = {
     home: number | null
     away: number | null
   }
+
+  referees?: string[]
 }
 
 function getStatus(status: string): MatchStatus {
@@ -77,6 +84,7 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
   return {
     id: fixture.fixture.id,
     startTime: fixture.fixture.date ?? undefined,
+    referees: fixture.referees,
     venue: fixture.fixture.venue?.name
       ? {
           name: fixture.fixture.venue.name,
@@ -87,6 +95,9 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
     
     homeTeam: fixture.teams.home.name,
     awayTeam: fixture.teams.away.name,
+
+    homeTeamId: fixture.teams.home.id,
+    awayTeamId: fixture.teams.away.id,
 
     homeLogo: fixture.teams.home.logo ?? undefined,
     awayLogo: fixture.teams.away.logo ?? undefined,
@@ -103,6 +114,7 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
         : undefined,
 
     league: fixture.league.name,
+    leagueId: fixture.league.id,
     country: fixture.league.country ?? "International",
   }
 }
@@ -172,6 +184,7 @@ export async function getMatches(cookie?: string): Promise<LeagueGroup[]> {
 
     const group =
       groups.get(key) ?? {
+        leagueId: match.leagueId ?? fixture.league.id,
         league: match.league,
         country: match.country,
         matches: [],
@@ -296,5 +309,62 @@ export async function getMatchLineups(id: number): Promise<MatchLineup[]> {
     return data.lineups ?? []
   } catch {
     return []
+  }
+}
+
+export async function getTeamProfile(
+  id: number
+): Promise<TeamProfile | null> {
+  try {
+    const response = await fetch(
+      `${API_URL}/api/teams/${id}`,
+      { cache: "no-store" }
+    )
+
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`Team API returned ${response.status}`)
+
+    return (await response.json()) as TeamProfile
+  } catch (error) {
+    console.error("Unable to load team profile:", error)
+    return null
+  }
+}
+
+export async function getPlayerProfile(
+  id: number
+): Promise<PlayerProfile | null> {
+  try {
+    const response = await fetch(
+      `${API_URL}/api/players/${id}`,
+      { cache: "no-store" }
+    )
+
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`Player API returned ${response.status}`)
+
+    return (await response.json()) as PlayerProfile
+  } catch (error) {
+    console.error("Unable to load player profile:", error)
+    return null
+  }
+}
+
+export async function getTournamentProfile(
+  id: number
+): Promise<TournamentProfile | null> {
+  try {
+    const response = await fetch(
+      `${API_URL}/api/tournaments/${id}`,
+      { cache: "no-store" }
+    )
+
+    if (response.status === 404) return null
+    if (!response.ok) throw new Error(`Tournament API returned ${response.status}`)
+
+    return (await response.json()) as TournamentProfile
+  } catch (error) {
+    console.error("Unable to load tournament profile:", error)
+    return null
   }
 }

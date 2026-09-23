@@ -6,6 +6,9 @@ import matchRoutes from "./routes/matchRoutes";
 import authRoutes from "./routes/authRoutes";
 import userRoutes from "./routes/userRoutes";
 import searchRoutes from "./routes/searchRoutes";
+import teamRoutes from "./routes/teamRoutes";
+import playerRoutes from "./routes/playerRoutes";
+import tournamentRoutes from "./routes/tournamentRoutes";
 import { initializeDatabase, pool } from "./db";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
@@ -42,6 +45,9 @@ app.use("/api/matches", matchRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/search", searchRoutes);
+app.use("/api/teams", teamRoutes);
+app.use("/api/players", playerRoutes);
+app.use("/api/tournaments", tournamentRoutes);
 
 const PORT = process.env.PORT || 5000;
 

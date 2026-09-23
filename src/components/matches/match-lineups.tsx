@@ -1,6 +1,7 @@
 import { Card, CardContent } from "@/components/ui/card"
 import type { MatchEvent, MatchLineup, MatchLineupPlayer } from "@/lib/matches"
 import Image from "next/image"
+import Link from "next/link"
 
 type SubstitutionInfo = { direction: "in" | "out"; minute: number | null }
 
@@ -76,7 +77,7 @@ function PlayerMarker({
         )}
       </div>
       <div className="mt-0.5 max-w-24 truncate rounded bg-black/70 px-1 text-[9px] font-semibold text-white sm:text-[10px]">
-        {player.name}
+        {player.id ? <Link href={`/player/${player.id}`} className="hover:underline">{player.name}</Link> : player.name}
       </div>
       <div className="mt-0.5 flex items-center justify-center gap-0.5 text-[9px] font-bold text-white">
         {player.rating && <span className={`rounded px-1 ${Number(player.rating) >= 7 ? "bg-emerald-500" : "bg-orange-500"}`}>{Number(player.rating).toFixed(1)}</span>}
@@ -114,7 +115,9 @@ function Bench({ lineup, events, side }: { lineup: MatchLineup; events: MatchEve
                 {player.photo ? <Image src={player.photo} alt={player.name} fill sizes="32px" className="object-cover" /> : <span className="flex h-full items-center justify-center text-[10px] font-bold">{player.name.slice(0, 2).toUpperCase()}</span>}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium">{player.name}</p>
+                <p className="truncate text-xs font-medium">
+                  {player.id ? <Link href={`/player/${player.id}`} className="hover:underline hover:text-blue-600 transition-colors">{player.name}</Link> : player.name}
+                </p>
                 <p className="text-[10px] text-muted-foreground">{player.position ?? "Substitute"}{player.rating ? ` · ${Number(player.rating).toFixed(1)}` : ""}</p>
               </div>
               {substitution && <span className={`text-xs font-bold ${substitution.direction === "in" ? "text-emerald-600" : "text-red-600"}`}>{substitution.direction === "in" ? "↑" : "↓"} {substitution.minute ?? ""}</span>}

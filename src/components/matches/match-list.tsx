@@ -1,6 +1,7 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -35,7 +36,13 @@ function MatchRow({ match }: { match: Match }) {
                 {match.homeTeam.substring(0, 2).toUpperCase()}
               </div>
             )}
-            <span className="text-sm font-medium">{match.homeTeam}</span>
+            <span className="text-sm font-medium">
+              {match.homeTeamId ? (
+                <Link href={`/team/${match.homeTeamId}`} onClick={(e) => e.stopPropagation()} className="hover:underline hover:text-blue-600 transition-colors">
+                  {match.homeTeam}
+                </Link>
+              ) : match.homeTeam}
+            </span>
           </div>
           <span className="text-sm font-semibold">{match.status === "UPCOMING" ? "-" : match.homeScore}</span>
         </div>
@@ -48,7 +55,13 @@ function MatchRow({ match }: { match: Match }) {
                 {match.awayTeam.substring(0, 2).toUpperCase()}
               </div>
             )}
-            <span className="text-sm font-medium">{match.awayTeam}</span>
+            <span className="text-sm font-medium">
+              {match.awayTeamId ? (
+                <Link href={`/team/${match.awayTeamId}`} onClick={(e) => e.stopPropagation()} className="hover:underline hover:text-blue-600 transition-colors">
+                  {match.awayTeam}
+                </Link>
+              ) : match.awayTeam}
+            </span>
           </div>
           <span className="text-sm font-semibold">{match.status === "UPCOMING" ? "-" : match.awayScore}</span>
         </div>
@@ -68,6 +81,7 @@ function MatchRow({ match }: { match: Match }) {
 type Filter = "all" | "live" | "finished" | "upcoming"
 
 export function MatchList({ leagues }: { leagues: LeagueGroup[] }) {
+  const router = useRouter()
   const [filter, setFilter] = useState<Filter>("all")
 
   // Apply filter across all leagues
@@ -146,7 +160,9 @@ export function MatchList({ leagues }: { leagues: LeagueGroup[] }) {
             <section key={`${leagueGroup.league}:${leagueGroup.country}`}>
               <div className="mb-3 flex items-center justify-between">
                 <div>
-                  <h2 className="text-sm font-semibold">{leagueGroup.league}</h2>
+                  <Link href={`/tournament/${leagueGroup.leagueId}`} className="hover:underline">
+                    <h2 className="text-sm font-semibold text-slate-900">{leagueGroup.league}</h2>
+                  </Link>
                   <p className="text-xs text-muted-foreground">{leagueGroup.country}</p>
                 </div>
               </div>
@@ -154,13 +170,12 @@ export function MatchList({ leagues }: { leagues: LeagueGroup[] }) {
                 <CardContent className="p-0">
                   {leagueGroup.matches.map((match, index) => (
                     <div key={match.id}>
-                      <Link
-                        href={`/match/${match.id}`}
-                        prefetch={false}
-                        className="block transition hover:bg-muted/50"
+                      <div 
+                        onClick={() => router.push(`/match/${match.id}`)}
+                        className="block transition hover:bg-muted/50 cursor-pointer"
                       >
                         <MatchRow match={match} />
-                      </Link>
+                      </div>
                       {index < leagueGroup.matches.length - 1 ? <Separator /> : null}
                     </div>
                   ))}

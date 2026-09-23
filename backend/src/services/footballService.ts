@@ -234,17 +234,27 @@ export async function getFavouriteFixtures(userId: number) {
 }
 
 export async function getMatchById(id: number) {
-  // 1. API-Football (primary - works for any fixture ID)
+  // 1. Local DB (primary since user wants SQL data)
+  try {
+    const { rows } = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1`, [id]);
+    if (rows.length > 0) {
+      const matchObj = mapDbRow(rows[0]) as ReturnType<typeof mapDbRow> & { referees?: string[] };
+      
+      // Fetch referees
+      const refResult = await pool.query(
+        `SELECT r.Name FROM MatchOfficiating mo JOIN Referee r ON mo.RefereeID = r.RefereeID WHERE mo.MatchID = $1`,
+        [id]
+      );
+      matchObj.referees = refResult.rows.map((r: any) => r.name);
+      return matchObj;
+    }
+  } catch (e) { console.warn("DB getMatchById:", (e as Error).message); }
+
+  // 2. API-Football
   try {
     const f = await fetchById(id);
     if (f) return f;
   } catch (e) { console.warn("API getMatchById:", (e as Error).message); }
-
-  // 2. Local DB
-  try {
-    const { rows } = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1`, [id]);
-    if (rows.length > 0) return mapDbRow(rows[0]);
-  } catch (e) { console.warn("DB getMatchById:", (e as Error).message); }
 
   // 3. Fallback
   return FALLBACK.find(m => m.fixture.id === id) ?? null;
@@ -334,55 +344,83 @@ export async function getMatchEvents(fixtureId: number) {
 
 export async function getMatchLineups(fixtureId: number) {
   try {
-    const [lineups, playerStats] = await Promise.all([
-      fetchLineups(fixtureId),
-      fetchPlayerStats(fixtureId).catch(() => []),
-    ])
+    // Check if match exists and get teams
+    const matchRes = await pool.query(
+      `SELECT HomeTeamID, AwayTeamID FROM Match WHERE MatchID = $1`,
+      [fixtureId]
+    );
+    if (matchRes.rows.length === 0) return [];
+    const matchRow = matchRes.rows[0];
 
-    const statsByPlayer = new Map<number, any>()
-    for (const team of playerStats) {
-      for (const entry of team.players ?? []) {
-        statsByPlayer.set(Number(entry.player?.id), entry)
-      }
+    const teamsToFetch = [matchRow.hometeamid, matchRow.awayteamid];
+    const results = [];
+
+    for (const teamId of teamsToFetch) {
+      // Get Team Info
+      const teamRes = await pool.query(
+        `SELECT Name, Logo FROM Team WHERE TeamID = $1`,
+        [teamId]
+      );
+      if (teamRes.rows.length === 0) continue;
+      const teamRow = teamRes.rows[0];
+
+      // Get Lineup Players
+      const lineupRes = await pool.query(
+        `
+        SELECT l.Status, p.PlayerID, p.Name
+        FROM Lineup l
+        JOIN Player p ON l.PlayerID = p.PlayerID
+        WHERE l.MatchID = $1 AND l.TeamID = $2
+        `,
+        [fixtureId, teamId]
+      );
+
+      const starters: any[] = [];
+      const substitutes: any[] = [];
+
+      lineupRes.rows.forEach(row => {
+        const playerObj = {
+          id: row.playerid,
+          name: row.name,
+          photo: null,
+          number: null,
+          position: null,
+          grid: null,
+          rating: null,
+          goals: 0,
+          assists: 0,
+          yellowCards: 0,
+          redCards: 0,
+        };
+
+        if (row.status === 'Starter') {
+          starters.push(playerObj);
+        } else {
+          substitutes.push(playerObj);
+        }
+      });
+
+      results.push({
+        team: {
+          id: teamId,
+          name: teamRow.name,
+          logo: teamRow.logo,
+        },
+        formation: "4-3-3", // Mock formation for now
+        coach: {
+          name: "Manager of " + teamRow.name,
+          photo: null,
+        },
+        starters,
+        substitutes,
+      });
     }
 
-    const mapPlayer = (entry: any) => {
-      const player = entry.player ?? {}
-      const stats = statsByPlayer.get(Number(player.id))
-      const statistics = stats?.statistics?.[0]
+    return results;
 
-      return {
-        id: Number(player.id),
-        name: player.name ?? "Unknown player",
-        photo: stats?.player?.photo ?? player.photo ?? null,
-        number: player.number ?? null,
-        position: player.pos ?? statistics?.games?.position ?? null,
-        grid: player.grid ?? null,
-        rating: statistics?.games?.rating ?? null,
-        goals: statistics?.goals?.total ?? 0,
-        assists: statistics?.goals?.assists ?? 0,
-        yellowCards: statistics?.cards?.yellow ?? 0,
-        redCards: statistics?.cards?.red ?? 0,
-      }
-    }
-
-    return lineups.map((lineup: any) => ({
-      team: {
-        id: Number(lineup.team?.id),
-        name: lineup.team?.name ?? "",
-        logo: lineup.team?.logo ?? null,
-      },
-      formation: lineup.formation ?? null,
-      coach: {
-        name: lineup.coach?.name ?? null,
-        photo: lineup.coach?.photo ?? null,
-      },
-      starters: (lineup.startXI ?? []).map(mapPlayer),
-      substitutes: (lineup.substitutes ?? []).map(mapPlayer),
-    }))
   } catch (error) {
-    console.warn("API getMatchLineups:", (error as Error).message)
-    return []
+    console.warn("DB getMatchLineups:", (error as Error).message);
+    return [];
   }
 }
 
