@@ -170,20 +170,27 @@ const todayStr = () => new Date().toISOString().split("T")[0];
 // ── Public service functions ──────────────────────────────────────────────────
 
 export async function getFixtures() {
-  // 1. API-Football (primary)
+  const combined: any[] = [];
+  
+  // 1. Local DB (Prioritize SQL data as user requested)
+  try {
+    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC`);
+    if (rows.length > 0) {
+      console.log(`Serving ${rows.length} fixtures from DB`);
+      combined.push(...rows.map(mapDbRow));
+    }
+  } catch (e) { console.warn("DB getFixtures:", (e as Error).message); }
+
+  // 2. API-Football
   try {
     const items = await fetchByDate(todayStr());
     if (items.length > 0) {
       console.log(`Serving ${items.length} fixtures from API-Football`);
-      return { response: sortByLeague(items) };
+      combined.push(...sortByLeague(items));
     }
   } catch (e) { console.warn("API getFixtures:", (e as Error).message); }
 
-  // 2. Local DB
-  try {
-    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC`);
-    if (rows.length > 0) { console.log("Serving fixtures from DB"); return { response: rows.map(mapDbRow) }; }
-  } catch (e) { console.warn("DB getFixtures:", (e as Error).message); }
+  if (combined.length > 0) return { response: combined };
 
   // 3. Hardcoded fallback
   console.warn("Using hardcoded fallback fixtures");
@@ -192,13 +199,26 @@ export async function getFixtures() {
 
 /** Top matches sorted by league tier (biggest leagues first). */
 export async function getPopularFixtures() {
+  const combined: any[] = [];
+  
+  // 1. Local DB matches first (so seeded data is accessible)
+  try {
+    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC LIMIT 4`);
+    if (rows.length > 0) {
+      combined.push(...rows.map(mapDbRow));
+    }
+  } catch (e) { console.warn("DB getPopularFixtures:", (e as Error).message); }
+
+  // 2. API Matches
   try {
     const items = await fetchByDate(todayStr());
-    return { response: sortByLeague(items).slice(0, 8) };
+    combined.push(...sortByLeague(items).slice(0, 8 - combined.length));
   } catch (e) {
     console.warn("API getPopularFixtures:", (e as Error).message);
-    return { response: FALLBACK };
   }
+
+  if (combined.length > 0) return { response: combined };
+  return { response: FALLBACK };
 }
 
 /** Matches involving teams the user follows (requires DB). */
@@ -349,7 +369,56 @@ export async function getMatchLineups(fixtureId: number) {
       `SELECT HomeTeamID, AwayTeamID FROM Match WHERE MatchID = $1`,
       [fixtureId]
     );
-    if (matchRes.rows.length === 0) return [];
+
+    if (matchRes.rows.length === 0) {
+      // Fallback to API if match isn't in our local DB
+      const [lineups, playerStats] = await Promise.all([
+        fetchLineups(fixtureId),
+        fetchPlayerStats(fixtureId).catch(() => []),
+      ]);
+
+      const statsByPlayer = new Map<number, any>();
+      for (const team of playerStats) {
+        for (const entry of team.players ?? []) {
+          statsByPlayer.set(Number(entry.player?.id), entry);
+        }
+      }
+
+      const mapPlayer = (entry: any) => {
+        const player = entry.player ?? {};
+        const stats = statsByPlayer.get(Number(player.id));
+        const statistics = stats?.statistics?.[0];
+
+        return {
+          id: Number(player.id),
+          name: player.name ?? "Unknown player",
+          photo: stats?.player?.photo ?? player.photo ?? null,
+          number: player.number ?? null,
+          position: player.pos ?? statistics?.games?.position ?? null,
+          grid: player.grid ?? null,
+          rating: statistics?.games?.rating ?? null,
+          goals: statistics?.goals?.total ?? 0,
+          assists: statistics?.goals?.assists ?? 0,
+          yellowCards: statistics?.cards?.yellow ?? 0,
+          redCards: statistics?.cards?.red ?? 0,
+        };
+      };
+
+      return lineups.map((lineup: any) => ({
+        team: {
+          id: Number(lineup.team?.id),
+          name: lineup.team?.name ?? "",
+          logo: lineup.team?.logo ?? null,
+        },
+        formation: lineup.formation ?? null,
+        coach: {
+          name: lineup.coach?.name ?? null,
+          photo: lineup.coach?.photo ?? null,
+        },
+        starters: (lineup.startXI ?? []).map(mapPlayer),
+        substitutes: (lineup.substitutes ?? []).map(mapPlayer),
+      }));
+    }
     const matchRow = matchRes.rows[0];
 
     const teamsToFetch = [matchRow.hometeamid, matchRow.awayteamid];
@@ -378,7 +447,7 @@ export async function getMatchLineups(fixtureId: number) {
       const starters: any[] = [];
       const substitutes: any[] = [];
 
-      lineupRes.rows.forEach(row => {
+      lineupRes.rows.forEach((row: any) => {
         const playerObj = {
           id: row.playerid,
           name: row.name,
@@ -419,7 +488,7 @@ export async function getMatchLineups(fixtureId: number) {
     return results;
 
   } catch (error) {
-    console.warn("DB getMatchLineups:", (error as Error).message);
+    console.warn("DB/API getMatchLineups:", (error as Error).message);
     return [];
   }
 }
