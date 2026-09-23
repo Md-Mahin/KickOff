@@ -5,6 +5,7 @@ import {
   getPopularFixtures,
   getFavouriteFixtures,
   getMatchEvents,
+  getMatchLineups,
 } from "../services/footballService";
 import { optionalAuth, requireAuth } from "../middleware/auth";
 import { pool } from "../db";
@@ -78,6 +79,23 @@ router.get("/:id/events", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch match events" });
   }
 });
+
+router.get("/:id/lineups", async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+
+    if (Number.isNaN(id)) {
+      return res.status(400).json({ message: "Invalid match ID" });
+    }
+
+    const lineups = await getMatchLineups(id);
+    res.json({ lineups });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Failed to fetch match lineups" });
+  }
+});
+
 // GET /api/matches/:id
 router.get("/:id", async (req, res) => {
   try {

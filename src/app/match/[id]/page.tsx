@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { getMatchById, getMatchEvents } from "@/lib/api"
+import { getMatchById, getMatchEvents, getMatchLineups } from "@/lib/api"
 import type { MatchWithLeague } from "@/lib/matches"
 import Image from "next/image"
 import { LocalMatchTime } from "@/components/matches/local-match-time"
+import { MatchLineups } from "@/components/matches/match-lineups"
 
 function MatchStatusBadge({ match }: { match: MatchWithLeague }) {
   if (match.status === "LIVE") {
@@ -26,7 +27,7 @@ function EventIcon({
   event,
 }: {
   event: {
-    eventtype: "Goal" | "Card" | "Foul"
+    eventtype: "Goal" | "Card" | "Foul" | "Substitution"
     cardtype: "Yellow" | "Red" | null
   }
 }) {
@@ -43,6 +44,10 @@ function EventIcon({
           }`}
       />
     )
+  }
+
+  if (event.eventtype === "Substitution") {
+    return <span className="text-lg font-bold text-emerald-600">↕</span>
   }
 
   return <span className="text-lg">⚠</span>
@@ -65,7 +70,10 @@ export default async function MatchPage({
   if (!match) {
     notFound()
   }
-  const events = await getMatchEvents(matchId)
+  const [events, lineups] = await Promise.all([
+    getMatchEvents(matchId),
+    getMatchLineups(matchId),
+  ])
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -186,6 +194,18 @@ export default async function MatchPage({
 
                   <span>{match.status}</span>
                 </div>
+
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Venue</span>
+                  <span className="text-right">
+                    {match.venue?.name ?? "Not available"}
+                    {match.venue?.city || match.venue?.country ? (
+                      <span className="block text-xs text-muted-foreground">
+                        {[match.venue.city, match.venue.country].filter(Boolean).join(", ")}
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -202,9 +222,9 @@ export default async function MatchPage({
                 </div>
               ) : (
                 <div className="mt-5 space-y-4">
-                  {events.map((event) => (
+                  {events.map((event, index) => (
                     <div
-                      key={event.eventid}
+                      key={`${event.eventid || "event"}-${event.eventtime ?? "time"}-${index}`}
                       className="flex items-center gap-4"
                     >
                       <div className="w-10 text-right text-sm font-medium">
@@ -221,7 +241,9 @@ export default async function MatchPage({
                             ? event.playername ?? "Goal"
                             : event.eventtype === "Card"
                               ? `${event.cardtype ?? ""} Card`
-                              : "Foul"}
+                              : event.eventtype === "Substitution"
+                                ? `${event.playername ?? "Player"} substituted`
+                                : "Foul"}
                         </div>
 
                         <div className="text-sm text-muted-foreground">
@@ -242,6 +264,8 @@ export default async function MatchPage({
           </Card>
 
         </div>
+
+        <MatchLineups lineups={lineups} events={events} />
 
       </main>
     </div>

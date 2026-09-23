@@ -2,36 +2,51 @@ import { pool } from "../db";
 
 // ── League priority (lower = bigger / shown first) ───────────────────────────
 const LEAGUE_PRIORITY: Record<string, number> = {
-  "World Cup": 1,
-  "Copa America": 2,
-  "UEFA Euro": 2,
-  "Africa Cup of Nations": 2,
-  "UEFA Nations League": 3,
-  "UEFA Champions League": 4,
-  "UEFA Europa League": 5,
-  "UEFA Europa Conference League": 6,
-  "Premier League": 7,
-  "La Liga": 8,
-  "Bundesliga": 9,
-  "Serie A": 10,
-  "Ligue 1": 11,
-  "Eredivisie": 12,
-  "Primeira Liga": 13,
-  "Scottish Premiership": 14,
-  "Süper Lig": 15,
-  "MLS": 16,
+  "Premier League": 1,
+  "Champions League": 2,
+  "UEFA Champions League": 2,
+  "La Liga": 3,
+  "World Cup": 4,
+  "Bundesliga": 5,
+  "Ligue 1": 6,
+  "Serie A": 7,
+  "Europa League": 8,
+  "UEFA Europa League": 8,
+  "Copa del Rey": 9,
+  "Copa America": 10,
+  "UEFA Euro": 11,
+  "Nations League": 12,
+  "Africa Cup": 13,
+  "Asian Cup": 14,
+  "Gold Cup": 15,
+  "CONCACAF": 16,
+  "Olympic": 17,
+  "Qualification": 18,
+  "Friendlies": 19,
+  "Eredivisie": 20,
+  "Primeira Liga": 21,
+  "Scottish Premiership": 22,
+  "Süper Lig": 23,
+  "MLS": 24,
 };
 
-function leaguePriority(name: string): number {
+function leaguePriority(name: string, country = ""): number {
+  if (name.toLowerCase().includes("premier league") && !country.toLowerCase().includes("england")) {
+    return 99;
+  }
+
   if (LEAGUE_PRIORITY[name] !== undefined) return LEAGUE_PRIORITY[name];
-  for (const [k, v] of Object.entries(LEAGUE_PRIORITY)) {
-    if (name.toLowerCase().includes(k.toLowerCase())) return v;
+  for (const [league, priority] of Object.entries(LEAGUE_PRIORITY)) {
+    if (name.toLowerCase().includes(league.toLowerCase())) return priority;
   }
   return 99;
 }
 
-function sortByLeague<T extends { league: { name: string } }>(arr: T[]): T[] {
-  return [...arr].sort((a, b) => leaguePriority(a.league.name) - leaguePriority(b.league.name));
+function sortByLeague<T extends { league: { name: string; country?: string | null } }>(items: T[]): T[] {
+  return [...items].sort((left, right) =>
+    leaguePriority(left.league.name, left.league.country ?? "") -
+    leaguePriority(right.league.name, right.league.country ?? "")
+  );
 }
 
 // ── National vs Club detection ────────────────────────────────────────────────
@@ -59,6 +74,13 @@ function mapApiItem(item: any) {
     fixture: {
       id: item.fixture.id,
       date: item.fixture.date,
+      venue: item.fixture.venue
+        ? {
+            name: item.fixture.venue.name,
+            city: item.fixture.venue.city,
+            country: item.fixture.venue.country,
+          }
+        : null,
       status: { short: item.fixture.status.short, elapsed: item.fixture.status.elapsed },
     },
     league: { id: item.league.id, name: item.league.name, country: item.league.country },
@@ -86,6 +108,14 @@ export async function fetchEvents(fixtureId: number) {
   return apiFetch(`/fixtures/events?fixture=${fixtureId}`);
 }
 
+export async function fetchLineups(fixtureId: number) {
+  return apiFetch(`/fixtures/lineups?fixture=${fixtureId}`);
+}
+
+export async function fetchPlayerStats(fixtureId: number) {
+  return apiFetch(`/fixtures/players?fixture=${fixtureId}`);
+}
+
 async function fetchById(id: number) {
   const items = await apiFetch(`/fixtures?id=${id}`);
   return items.length > 0 ? mapApiItem(items[0]) : null;
@@ -94,6 +124,8 @@ async function fetchById(id: number) {
 // ── DB helpers ────────────────────────────────────────────────────────────────
 const BASE_QUERY = `
   SELECT m.MatchID, m.HomeGoals, m.AwayGoals, m.MatchDate,
+    venue.Name AS VenueName, venue.City AS VenueCity,
+    venueCountry.Name AS VenueCountry,
     t.TournamentID, t.Name AS TournamentName,
     home.TeamID AS HomeTeamID, home.Name AS HomeTeamName,
     away.TeamID AS AwayTeamID, away.Name AS AwayTeamName,
@@ -102,6 +134,8 @@ const BASE_QUERY = `
   JOIN Tournament t ON m.TournamentID = t.TournamentID
   JOIN Team home ON m.HomeTeamID = home.TeamID
   JOIN Team away ON m.AwayTeamID = away.TeamID
+  LEFT JOIN Venue venue ON m.VenueID = venue.VenueID
+  LEFT JOIN Country venueCountry ON venue.CountryID = venueCountry.CountryID
 `;
 
 function mapDbRow(row: any) {
@@ -112,6 +146,9 @@ function mapDbRow(row: any) {
   else if (mins >= 120) { status = "FT"; elapsed = 90; }
   return {
     fixture: { id: row.matchid, date: row.matchdate, status: { short: status, elapsed } },
+    venue: row.venuename
+      ? { name: row.venuename, city: row.venuecity, country: row.venuecountry }
+      : null,
     league: { id: row.tournamentid, name: row.tournamentname, country: "International" },
     teams: {
       home: { id: row.hometeamid, name: row.hometeamname, logo: row.hometeamlogo },
@@ -221,11 +258,12 @@ export async function getMatchEvents(fixtureId: number) {
     return apiEvents
       .map((event: any, index: number) => {
         const type = event.type?.toLowerCase()
-        let eventType: "Goal" | "Card" | "Foul" | null = null
+        let eventType: "Goal" | "Card" | "Foul" | "Substitution" | null = null
 
         if (type === "goal") eventType = "Goal"
         else if (type === "card") eventType = "Card"
         else if (type === "foul") eventType = "Foul"
+        else if (type === "subst") eventType = "Substitution"
 
         if (!eventType) return null
 
@@ -234,6 +272,8 @@ export async function getMatchEvents(fixtureId: number) {
 
         return {
           eventid: event.id ?? `${fixtureId}-${index}`,
+          playerid: event.player?.id ?? null,
+          substitutionplayerid: event.assist?.id ?? null,
           eventtime: event.time?.elapsed ?? null,
           eventtype: eventType,
           playername: event.player?.name ?? null,
@@ -291,6 +331,61 @@ export async function getMatchEvents(fixtureId: number) {
     cardtype: row.cardtype,
   }))
 }
+
+export async function getMatchLineups(fixtureId: number) {
+  try {
+    const [lineups, playerStats] = await Promise.all([
+      fetchLineups(fixtureId),
+      fetchPlayerStats(fixtureId).catch(() => []),
+    ])
+
+    const statsByPlayer = new Map<number, any>()
+    for (const team of playerStats) {
+      for (const entry of team.players ?? []) {
+        statsByPlayer.set(Number(entry.player?.id), entry)
+      }
+    }
+
+    const mapPlayer = (entry: any) => {
+      const player = entry.player ?? {}
+      const stats = statsByPlayer.get(Number(player.id))
+      const statistics = stats?.statistics?.[0]
+
+      return {
+        id: Number(player.id),
+        name: player.name ?? "Unknown player",
+        photo: stats?.player?.photo ?? player.photo ?? null,
+        number: player.number ?? null,
+        position: player.pos ?? statistics?.games?.position ?? null,
+        grid: player.grid ?? null,
+        rating: statistics?.games?.rating ?? null,
+        goals: statistics?.goals?.total ?? 0,
+        assists: statistics?.goals?.assists ?? 0,
+        yellowCards: statistics?.cards?.yellow ?? 0,
+        redCards: statistics?.cards?.red ?? 0,
+      }
+    }
+
+    return lineups.map((lineup: any) => ({
+      team: {
+        id: Number(lineup.team?.id),
+        name: lineup.team?.name ?? "",
+        logo: lineup.team?.logo ?? null,
+      },
+      formation: lineup.formation ?? null,
+      coach: {
+        name: lineup.coach?.name ?? null,
+        photo: lineup.coach?.photo ?? null,
+      },
+      starters: (lineup.startXI ?? []).map(mapPlayer),
+      substitutes: (lineup.substitutes ?? []).map(mapPlayer),
+    }))
+  } catch (error) {
+    console.warn("API getMatchLineups:", (error as Error).message)
+    return []
+  }
+}
+
 export async function syncMatchEvents(fixtureId: number) {
   const apiResult = await fetchEvents(fixtureId);
 
