@@ -426,12 +426,52 @@ const DEFAULT_SUB_POSITIONS = [
 
 export async function seedDefaultLineupForMatch(matchId: number, homeTeamId: number, awayTeamId: number) {
   try {
+    const mRes = await pool.query(`SELECT MatchDate FROM Match WHERE MatchID = $1`, [matchId]);
+    const matchDate = mRes.rows[0]?.matchdate ? new Date(mRes.rows[0].matchdate) : null;
+    const isUpcoming = matchDate ? matchDate.getTime() > Date.now() : false;
+
+    // For upcoming matches, ensure no "Sub" records exist in Lineup
+    if (isUpcoming) {
+      await pool.query(`DELETE FROM Lineup WHERE MatchID = $1 AND Status = 'Sub'`, [matchId]);
+    }
+
     for (const teamId of [homeTeamId, awayTeamId]) {
       const countRes = await pool.query(
         `SELECT COUNT(*) FROM Lineup WHERE MatchID = $1 AND TeamID = $2 AND Status = 'Starter'`,
         [matchId, teamId]
       );
       if (parseInt(countRes.rows[0].count, 10) >= 11) continue;
+
+      // 1. Check if this team already has players registered from another match!
+      const existingTeamPlayers = await pool.query(
+        `SELECT DISTINCT p.PlayerID, p.Name, p.Position, l.JerseyNumber, l.Status
+         FROM Lineup l
+         JOIN Player p ON l.PlayerID = p.PlayerID
+         WHERE l.TeamID = $1 ${isUpcoming ? "AND l.Status = 'Starter'" : ""}
+         ORDER BY l.Status DESC, l.JerseyNumber ASC`,
+        [teamId]
+      );
+
+      if (existingTeamPlayers.rows.length >= 11) {
+        for (const ep of existingTeamPlayers.rows) {
+          if (isUpcoming && ep.status === "Sub") continue;
+          await pool.query(
+            `INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation, Position, JerseyNumber)
+             VALUES ($1, $2, $3, $4, '4-3-3', $5, $6)
+             ON CONFLICT (MatchID, TeamID, PlayerID) DO UPDATE SET
+               Formation = EXCLUDED.Formation,
+               Position = EXCLUDED.Position,
+               JerseyNumber = EXCLUDED.JerseyNumber`,
+            [matchId, teamId, ep.playerid, ep.status, ep.position, ep.jerseynumber]
+          );
+        }
+        continue;
+      }
+
+      // 2. Synchronize PostgreSQL sequence to prevent duplicate key errors
+      await pool.query(
+        `SELECT setval(pg_get_serial_sequence('Player', 'playerid'), COALESCE(MAX(PlayerID), 1)) FROM Player`
+      );
 
       const tRes = await pool.query(`SELECT Name FROM Team WHERE TeamID = $1`, [teamId]);
       const teamName = tRes.rows[0]?.name?.trim() ?? "Player";
@@ -457,24 +497,27 @@ export async function seedDefaultLineupForMatch(matchId: number, homeTeamId: num
         );
       }
 
-      // Insert subs
-      for (const s of DEFAULT_SUB_POSITIONS) {
-        const pName = `${shortTeam} ${s.role}`;
-        const pRes = await pool.query(
-          `INSERT INTO Player (Name, Position) VALUES ($1, $2) RETURNING PlayerID`,
-          [pName, s.pos]
-        );
-        const pid = pRes.rows[0].playerid;
+      // Insert subs ONLY if match has already started (LIVE or FT)
+      // "subs should only occur while the match happens and no record before that but the record will stay after that"
+      if (!isUpcoming) {
+        for (const s of DEFAULT_SUB_POSITIONS) {
+          const pName = `${shortTeam} ${s.role}`;
+          const pRes = await pool.query(
+            `INSERT INTO Player (Name, Position) VALUES ($1, $2) RETURNING PlayerID`,
+            [pName, s.pos]
+          );
+          const pid = pRes.rows[0].playerid;
 
-        await pool.query(
-          `INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation, Position, JerseyNumber)
-           VALUES ($1, $2, $3, 'Sub', '4-3-3', $4, $5)
-           ON CONFLICT (MatchID, TeamID, PlayerID) DO UPDATE SET
-             Formation = EXCLUDED.Formation,
-             Position = EXCLUDED.Position,
-             JerseyNumber = EXCLUDED.JerseyNumber`,
-          [matchId, teamId, pid, s.pos, s.num]
-        );
+          await pool.query(
+            `INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation, Position, JerseyNumber)
+             VALUES ($1, $2, $3, 'Sub', '4-3-3', $4, $5)
+             ON CONFLICT (MatchID, TeamID, PlayerID) DO UPDATE SET
+               Formation = EXCLUDED.Formation,
+               Position = EXCLUDED.Position,
+               JerseyNumber = EXCLUDED.JerseyNumber`,
+            [matchId, teamId, pid, s.pos, s.num]
+          );
+        }
       }
     }
   } catch (err) {
@@ -525,7 +568,7 @@ export async function getFixtures() {
 /** Top matches sorted by league tier (biggest leagues first). */
 export async function getPopularFixtures() {
   try {
-    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC LIMIT 8`);
+    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC LIMIT 12`);
     if (rows.length > 0) {
       return { response: sortByLeague(rows.map(mapDbRow)) };
     }
@@ -608,13 +651,218 @@ export async function getMatchById(id: number) {
   return FALLBACK.find(m => m.fixture.id === id) ?? null;
 }
 
+function applyEventLifecycleFilter(events: any[], matchDate: Date | null) {
+  if (!matchDate) return events;
+  const mins = Math.floor((Date.now() - matchDate.getTime()) / 60000);
+
+  if (mins < 0) {
+    // Before kickoff: No events occur before the match happens
+    return [];
+  } else if (mins < 120) {
+    // LIVE match: Only events that have occurred so far
+    const currentElapsed = Math.min(mins, 90);
+    return events.filter(e => (e.eventtime ?? 0) <= currentElapsed);
+  }
+  // FT (mins >= 120): Match completed, records stay forever
+  return events;
+}
+
+export async function seedDefaultEventsForMatch(fixtureId: number) {
+  try {
+    const mRes = await pool.query(
+      `SELECT MatchID, HomeTeamID, AwayTeamID, MatchDate, HomeGoals, AwayGoals FROM Match WHERE MatchID = $1`,
+      [fixtureId]
+    );
+    if (mRes.rows.length === 0) return;
+    const match = mRes.rows[0];
+    const matchDate = match.matchdate ? new Date(match.matchdate) : null;
+
+    if (!matchDate) return;
+    const mins = Math.floor((Date.now() - matchDate.getTime()) / 60000);
+    // Do NOT generate events for upcoming matches before kickoff
+    if (mins < 0) return;
+
+    const homeGoals = Number(match.homegoals ?? 0);
+    const awayGoals = Number(match.awaygoals ?? 0);
+    const homeTeamId = Number(match.hometeamid);
+    const awayTeamId = Number(match.awayteamid);
+
+    const evCountRes = await pool.query(
+      `SELECT 
+         COUNT(*)::int AS total_events,
+         COUNT(CASE WHEN EventType = 'Goal' THEN 1 END)::int AS total_goals
+       FROM Event WHERE MatchID = $1`,
+      [fixtureId]
+    );
+    const totalEvents = evCountRes.rows[0].total_events;
+    const totalGoals = evCountRes.rows[0].total_goals;
+
+    if (totalEvents > 0 && totalGoals >= (homeGoals + awayGoals)) {
+      return;
+    }
+
+    await seedDefaultLineupForMatch(fixtureId, homeTeamId, awayTeamId);
+
+    const playersRes = await pool.query(
+      `SELECT l.PlayerID, l.TeamID, l.Status, l.Position, p.Name
+       FROM Lineup l
+       JOIN Player p ON l.PlayerID = p.PlayerID
+       WHERE l.MatchID = $1
+       ORDER BY l.TeamID, l.Status DESC, l.JerseyNumber ASC`,
+      [fixtureId]
+    );
+
+    const homeStarters = playersRes.rows.filter((r: any) => r.teamid === homeTeamId && r.status === 'Starter');
+    const homeSubs = playersRes.rows.filter((r: any) => r.teamid === homeTeamId && r.status === 'Sub');
+    const awayStarters = playersRes.rows.filter((r: any) => r.teamid === awayTeamId && r.status === 'Starter');
+    const awaySubs = playersRes.rows.filter((r: any) => r.teamid === awayTeamId && r.status === 'Sub');
+
+    const getAttackers = (starters: any[]) => {
+      const att = starters.filter(p => p.position === 'F' || p.position === 'M');
+      return att.length > 0 ? att : starters.filter(p => p.position !== 'G');
+    };
+
+    const homeAttackers = getAttackers(homeStarters);
+    const awayAttackers = getAttackers(awayStarters);
+
+    await pool.query(
+      `SELECT setval(pg_get_serial_sequence('Event', 'eventid'), COALESCE(MAX(EventID), 1)) FROM Event`
+    );
+
+    // 1. Generate missing Goals
+    if (totalGoals < (homeGoals + awayGoals)) {
+      const goalTypes = ['Standard', 'Header', 'Counter', 'Penalty', 'Volley'];
+
+      const homeTimes = [18, 34, 57, 72, 84, 89];
+      for (let i = 0; i < homeGoals; i++) {
+        const scorer = homeAttackers.length > 0 ? homeAttackers[i % homeAttackers.length] : (homeStarters[0] || null);
+        const assist = homeStarters.filter((p: any) => p.playerid !== scorer?.playerid)[i % Math.max(1, homeStarters.length - 1)] || null;
+        const time = homeTimes[i % homeTimes.length] + (i * 2);
+        const gType = goalTypes[i % goalTypes.length];
+
+        if (scorer) {
+          const insEv = await pool.query(
+            `INSERT INTO Event (MatchID, PlayerID, TeamID, EventTime, EventType)
+             VALUES ($1, $2, $3, $4, 'Goal') RETURNING EventID`,
+            [fixtureId, scorer.playerid, homeTeamId, time]
+          );
+          const evId = insEv.rows[0].eventid;
+          await pool.query(
+            `INSERT INTO Goal (EventID, AssistPlayerID, GoalType) VALUES ($1, $2, $3)`,
+            [evId, assist ? assist.playerid : null, gType]
+          );
+        }
+      }
+
+      const awayTimes = [27, 45, 63, 79, 86, 90];
+      for (let i = 0; i < awayGoals; i++) {
+        const scorer = awayAttackers.length > 0 ? awayAttackers[i % awayAttackers.length] : (awayStarters[0] || null);
+        const assist = awayStarters.filter((p: any) => p.playerid !== scorer?.playerid)[i % Math.max(1, awayStarters.length - 1)] || null;
+        const time = awayTimes[i % awayTimes.length] + (i * 2);
+        const gType = goalTypes[(i + 1) % goalTypes.length];
+
+        if (scorer) {
+          const insEv = await pool.query(
+            `INSERT INTO Event (MatchID, PlayerID, TeamID, EventTime, EventType)
+             VALUES ($1, $2, $3, $4, 'Goal') RETURNING EventID`,
+            [fixtureId, scorer.playerid, awayTeamId, time]
+          );
+          const evId = insEv.rows[0].eventid;
+          await pool.query(
+            `INSERT INTO Goal (EventID, AssistPlayerID, GoalType) VALUES ($1, $2, $3)`,
+            [evId, assist ? assist.playerid : null, gType]
+          );
+        }
+      }
+    }
+
+    // 2. Generate Cards if this match had no events at all
+    if (totalEvents === 0) {
+      const homeDefenders = homeStarters.filter((p: any) => p.position === 'D' || p.position === 'M');
+      const awayDefenders = awayStarters.filter((p: any) => p.position === 'D' || p.position === 'M');
+
+      if (homeDefenders.length > 0) {
+        const cardPlayer = homeDefenders[0];
+        const insEv = await pool.query(
+          `INSERT INTO Event (MatchID, PlayerID, TeamID, EventTime, EventType)
+           VALUES ($1, $2, $3, 29, 'Card') RETURNING EventID`,
+          [fixtureId, cardPlayer.playerid, homeTeamId]
+        );
+        await pool.query(`INSERT INTO Card (EventID, CardType) VALUES ($1, 'Yellow')`, [insEv.rows[0].eventid]);
+      }
+
+      if (awayDefenders.length > 0) {
+        const cardPlayer = awayDefenders[0];
+        const insEv = await pool.query(
+          `INSERT INTO Event (MatchID, PlayerID, TeamID, EventTime, EventType)
+           VALUES ($1, $2, $3, 68, 'Card') RETURNING EventID`,
+          [fixtureId, cardPlayer.playerid, awayTeamId]
+        );
+        await pool.query(`INSERT INTO Card (EventID, CardType) VALUES ($1, 'Yellow')`, [insEv.rows[0].eventid]);
+      }
+
+      // 3. Generate Substitutions if subs exist
+      if (homeSubs.length > 0 && homeStarters.length > 0) {
+        const outPlayer = homeStarters.find((p: any) => p.position === 'F' || p.position === 'M') || homeStarters[homeStarters.length - 1];
+        const inPlayer = homeSubs[0];
+        const insEv = await pool.query(
+          `INSERT INTO Event (MatchID, PlayerID, TeamID, EventTime, EventType)
+           VALUES ($1, $2, $3, 62, 'Substitution') RETURNING EventID`,
+          [fixtureId, outPlayer.playerid, homeTeamId]
+        );
+        await pool.query(
+          `INSERT INTO Substitution (EventID, InPlayerID) VALUES ($1, $2)`,
+          [insEv.rows[0].eventid, inPlayer.playerid]
+        );
+      }
+
+      if (awaySubs.length > 0 && awayStarters.length > 0) {
+        const outPlayer = awayStarters.find((p: any) => p.position === 'F' || p.position === 'M') || awayStarters[awayStarters.length - 1];
+        const inPlayer = awaySubs[0];
+        const insEv = await pool.query(
+          `INSERT INTO Event (MatchID, PlayerID, TeamID, EventTime, EventType)
+           VALUES ($1, $2, $3, 73, 'Substitution') RETURNING EventID`,
+          [fixtureId, outPlayer.playerid, awayTeamId]
+        );
+        await pool.query(
+          `INSERT INTO Substitution (EventID, InPlayerID) VALUES ($1, $2)`,
+          [insEv.rows[0].eventid, inPlayer.playerid]
+        );
+      }
+    }
+
+    await pool.query(
+      `SELECT setval(pg_get_serial_sequence('Event', 'eventid'), COALESCE(MAX(EventID), 1)) FROM Event`
+    );
+  } catch (err) {
+    console.warn("seedDefaultEventsForMatch error:", (err as Error).message);
+  }
+}
+
 export async function getMatchEvents(fixtureId: number) {
+  let matchDate: Date | null = null;
+  try {
+    const mRes = await pool.query(`SELECT MatchDate FROM Match WHERE MatchID = $1`, [fixtureId]);
+    if (mRes.rows.length > 0 && mRes.rows[0].matchdate) {
+      matchDate = new Date(mRes.rows[0].matchdate);
+    }
+  } catch {}
+
+  // If matchDate is in the future (kickoff not reached):
+  if (matchDate) {
+    const mins = Math.floor((Date.now() - matchDate.getTime()) / 60000);
+    if (mins < 0) {
+      // Kickoff has not occurred yet; no events recorded or shown before kickoff
+      return [];
+    }
+  }
+
   // The timeline belongs to the selected fixture, so fetch it only from the
   // detail request instead of depending on a pre-synced local match row.
   try {
     const apiEvents = await fetchEvents(fixtureId)
 
-    return apiEvents
+    const mapped = apiEvents
       .map((event: any, index: number) => {
         const type = event.type?.toLowerCase()
         let eventType: "Goal" | "Card" | "Foul" | "Substitution" | null = null
@@ -650,9 +898,16 @@ export async function getMatchEvents(fixtureId: number) {
         }
       })
       .filter((event): event is NonNullable<typeof event> => event !== null)
+
+    if (mapped.length > 0) {
+      return applyEventLifecycleFilter(mapped, matchDate);
+    }
   } catch (error) {
     console.warn("API getMatchEvents:", (error as Error).message)
   }
+
+  // Ensure default events exist for matches after kickoff
+  await seedDefaultEventsForMatch(fixtureId);
 
   // Keep locally synced events available when API-Football is unavailable.
   try {
@@ -662,11 +917,14 @@ export async function getMatchEvents(fixtureId: number) {
         e.EventID,
         e.EventTime,
         e.EventType,
+        e.PlayerID,
         p.Name AS PlayerName,
         t.Name AS TeamName,
         g.GoalType,
         ap.Name AS AssistPlayerName,
-        c.CardType
+        c.CardType,
+        sub.InPlayerID AS SubstitutionPlayerID,
+        subp.Name AS InPlayerName
       FROM Event e
       JOIN Match m ON e.MatchID = m.MatchID
       LEFT JOIN Team t ON e.TeamID = t.TeamID
@@ -674,22 +932,28 @@ export async function getMatchEvents(fixtureId: number) {
       LEFT JOIN Goal g ON e.EventID = g.EventID
       LEFT JOIN Player ap ON ap.PlayerID = g.AssistPlayerID
       LEFT JOIN Card c ON e.EventID = c.EventID
+      LEFT JOIN Substitution sub ON e.EventID = sub.EventID
+      LEFT JOIN Player subp ON sub.InPlayerID = subp.PlayerID
       WHERE m.MatchID = $1
       ORDER BY e.EventTime ASC
       `,
       [fixtureId]
     )
 
-    return rows.map((row: any) => ({
+    const mappedDb = rows.map((row: any) => ({
       eventid: row.eventid,
       eventtime: row.eventtime,
       eventtype: row.eventtype,
+      playerid: row.playerid,
       playername: row.playername,
+      substitutionplayerid: row.substitutionplayerid ?? null,
+      assistplayername: row.inplayername ?? row.assistplayername ?? null,
       teamname: row.teamname ?? "",
       goaltype: row.goaltype,
-      assistplayername: row.assistplayername,
       cardtype: row.cardtype,
     }))
+
+    return applyEventLifecycleFilter(mappedDb, matchDate);
   } catch {
     return []
   }
@@ -699,7 +963,7 @@ export async function getMatchLineups(fixtureId: number) {
   try {
     // 1. Ensure match exists in DB
     let matchRes = await pool.query(
-      `SELECT HomeTeamID, AwayTeamID FROM Match WHERE MatchID = $1`,
+      `SELECT HomeTeamID, AwayTeamID, MatchDate FROM Match WHERE MatchID = $1`,
       [fixtureId]
     );
 
@@ -709,7 +973,7 @@ export async function getMatchLineups(fixtureId: number) {
         if (raw) {
           await syncFixtureToDb(raw);
           matchRes = await pool.query(
-            `SELECT HomeTeamID, AwayTeamID FROM Match WHERE MatchID = $1`,
+            `SELECT HomeTeamID, AwayTeamID, MatchDate FROM Match WHERE MatchID = $1`,
             [fixtureId]
           );
         }
@@ -721,33 +985,43 @@ export async function getMatchLineups(fixtureId: number) {
     if (matchRes.rows.length === 0) return [];
     const matchRow = matchRes.rows[0];
 
-    // 2. Check how many starters are in Lineup table for this match
-    let countRes = await pool.query(
-      `SELECT COUNT(*) FROM Lineup WHERE MatchID = $1`,
-      [fixtureId]
-    );
-    let lineupCount = parseInt(countRes.rows[0].count, 10);
-
-    // 3. If no lineups in DB, try fetching from API and syncing into Lineup table
-    if (lineupCount === 0) {
-      try {
-        const apiLineups = await fetchLineups(fixtureId);
-        if (Array.isArray(apiLineups) && apiLineups.length > 0) {
-          await syncLineupsToDb(fixtureId, apiLineups);
-          countRes = await pool.query(
-            `SELECT COUNT(*) FROM Lineup WHERE MatchID = $1`,
-            [fixtureId]
-          );
-          lineupCount = parseInt(countRes.rows[0].count, 10);
-        }
-      } catch (e) {
-        console.warn("fetchLineups from API error:", (e as Error).message);
+    // Only matches which are about to happen within 1hr should have lineups.
+    // Otherwise no lineups for matches remaining in the upcoming section.
+    if (matchRow.matchdate) {
+      const matchDate = new Date(matchRow.matchdate);
+      const timeUntilKickoff = matchDate.getTime() - Date.now();
+      if (timeUntilKickoff > 60 * 60 * 1000) {
+        return [];
       }
     }
 
-    // 4. If STILL 0 (e.g. upcoming match with no live API lineups, or local match needing squads):
-    if (lineupCount === 0) {
-      await seedDefaultLineupForMatch(fixtureId, matchRow.hometeamid, matchRow.awayteamid);
+    const isUpcoming = matchRow.matchdate ? new Date(matchRow.matchdate).getTime() > Date.now() : false;
+
+    // For upcoming matches, clean up any 'Sub' records in Lineup
+    if (isUpcoming) {
+      await pool.query(`DELETE FROM Lineup WHERE MatchID = $1 AND Status = 'Sub'`, [fixtureId]);
+    }
+
+    // 2. Ensure each team in the match has at least 11 starters
+    for (const teamId of [matchRow.hometeamid, matchRow.awayteamid]) {
+      const countRes = await pool.query(
+        `SELECT COUNT(*) FROM Lineup WHERE MatchID = $1 AND TeamID = $2 AND Status = 'Starter'`,
+        [fixtureId, teamId]
+      );
+      const starterCount = parseInt(countRes.rows[0].count, 10);
+
+      if (starterCount < 11) {
+        // Try API first
+        try {
+          const apiLineups = await fetchLineups(fixtureId);
+          if (Array.isArray(apiLineups) && apiLineups.length > 0) {
+            await syncLineupsToDb(fixtureId, apiLineups);
+          }
+        } catch (e) {}
+
+        // If still fewer than 11, seed default or reuse squad
+        await seedDefaultLineupForMatch(fixtureId, teamId, teamId);
+      }
     }
 
     // 5. Query Lineup directly from the PostgreSQL DB table!
@@ -810,7 +1084,7 @@ export async function getMatchLineups(fixtureId: number) {
         if (row.status === "Starter") {
           starters.push(playerObj);
           starterIdx++;
-        } else {
+        } else if (!isUpcoming) {
           substitutes.push(playerObj);
         }
       });

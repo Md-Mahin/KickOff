@@ -77,6 +77,7 @@ export type TeamInfo = {
   country: string | null
   club: string | null
   federation: string | null
+  followers?: number
 }
 
 export type TeamVenue = {

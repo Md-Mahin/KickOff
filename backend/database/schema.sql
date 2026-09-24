@@ -121,7 +121,7 @@ CREATE TABLE Event (
     PlayerID      INT REFERENCES Player(PlayerID),
     TeamID        INT REFERENCES Team(TeamID),
     EventTime     INT,
-    EventType     VARCHAR(20) NOT NULL CHECK (EventType IN ('Goal','Card','Foul'))
+    EventType     VARCHAR(20) NOT NULL CHECK (EventType IN ('Goal','Card','Foul','Substitution'))
 );
 
 CREATE TABLE Goal (
@@ -138,6 +138,11 @@ CREATE TABLE Card (
 CREATE TABLE Foul (
     EventID       INT PRIMARY KEY REFERENCES Event(EventID),
     FouledPlayerID INT REFERENCES Player(PlayerID)
+);
+
+CREATE TABLE Substitution (
+    EventID       INT PRIMARY KEY REFERENCES Event(EventID) ON DELETE CASCADE,
+    InPlayerID    INT REFERENCES Player(PlayerID)
 );
 
 CREATE TABLE Users (
@@ -206,6 +211,23 @@ CREATE TABLE Comment (
     PostedAt      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE Notification (
+    NotificationID SERIAL PRIMARY KEY,
+    UserID         INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
+    MatchID        INT NOT NULL REFERENCES Match(MatchID) ON DELETE CASCADE,
+    Type           VARCHAR(30) NOT NULL CHECK (Type IN ('ABOUT_TO_START', 'JUST_STARTED', 'FINISHED')),
+    Title          VARCHAR(255) NOT NULL,
+    Message        TEXT NOT NULL,
+    EntityName     VARCHAR(100),
+    EntityType     VARCHAR(20) CHECK (EntityType IN ('Team', 'Player')),
+    IsRead         BOOLEAN NOT NULL DEFAULT FALSE,
+    CreatedAt      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_user_match_type UNIQUE (UserID, MatchID, Type)
+);
+
+CREATE INDEX idx_notification_user     ON Notification(UserID, IsRead);
+CREATE INDEX idx_notification_match    ON Notification(MatchID);
+
 CREATE INDEX idx_team_club            ON Team(ClubID);
 CREATE INDEX idx_team_country         ON Team(CountryID);
 CREATE INDEX idx_player_nationality   ON Player(NationalityCountryID);
@@ -264,7 +286,7 @@ CREATE OR REPLACE FUNCTION recompute_match_goals() RETURNS TRIGGER AS $$
 DECLARE
     m_id INT;
 BEGIN
-    m_id := COALESCE(NEW.MatchID, OLD.MatchID);
+    SELECT MatchID INTO m_id FROM Event WHERE EventID = COALESCE(NEW.EventID, OLD.EventID);
 
     UPDATE Match SET
         HomeGoals = (

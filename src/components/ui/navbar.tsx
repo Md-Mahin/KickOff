@@ -1,11 +1,13 @@
 "use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
-import { Bell, Menu } from "lucide-react"
+import { Menu } from "lucide-react"
 import { useEffect, useState } from "react"
 
 import GlobalSearch from "./global-search"
+import NotificationsMenu from "./notifications-menu"
 
 export default function Navbar() {
   const router = useRouter()
@@ -43,10 +45,23 @@ export default function Navbar() {
           <div className="flex flex-1 items-center justify-center sm:items-stretch sm:justify-start">
 
             {/* Logo */}
-            <Link href="/" className="flex shrink-0 items-center">
-              <span className="text-2xl font-bold text-white">
-                KickOff
-              </span>
+            <Link href="/" className="flex shrink-0 items-center gap-3 group">
+              <Image
+                src="/kickoff_main_logo.png"
+                alt="KickOff Logo"
+                width={151}
+                height={82}
+                className="h-10 w-auto object-contain transition-opacity group-hover:opacity-90"
+                priority
+              />
+              <Image
+                src="/kickoff_logo_with_motto.png"
+                alt="KickOff Motto"
+                width={209}
+                height={38}
+                className="h-7 w-auto object-contain transition-opacity group-hover:opacity-90"
+                priority
+              />
             </Link>
 
             {/* Desktop navigation */}
@@ -70,13 +85,7 @@ export default function Navbar() {
             <GlobalSearch />
 
             {/* Notifications */}
-            <button
-              type="button"
-              className="relative rounded-full p-2 text-gray-400 hover:text-white focus:outline-none"
-              aria-label="Notifications"
-            >
-              <Bell className="size-6" />
-            </button>
+            <NotificationsMenu signedIn={signedIn} />
 
             {mounted
               ? signedIn

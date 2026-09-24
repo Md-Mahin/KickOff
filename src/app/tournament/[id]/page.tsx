@@ -76,33 +76,48 @@ function FeaturedMatchCard({ match }: { match: TeamMatch }) {
 }
 
 function MatchRow({ match }: { match: TeamMatch }) {
+  const isUpcoming = match.status === "UPCOMING"
+
   return (
-    <div className="flex items-center gap-3 border-b border-border px-4 py-3 hover:bg-muted/40 transition-colors last:border-b-0">
+    <Link
+      href={`/match/${match.id}`}
+      className="group flex items-center gap-3 border-b border-border px-4 py-3 hover:bg-muted/40 transition-colors last:border-b-0 cursor-pointer"
+    >
       <div className="w-16 shrink-0 text-xs text-muted-foreground leading-tight">
         <div>{formatDate(match.date).split(" ").slice(0, 2).join(" ")}</div>
         <div>{formatTime(match.date)}</div>
       </div>
-      <div className="w-8 shrink-0 text-center">
-        <span className="text-[10px] font-bold text-muted-foreground">{match.status}</span>
-      </div>
+      {!isUpcoming && (
+        <div className="w-8 shrink-0 text-center">
+          <span className={`text-[10px] font-bold ${match.status === "LIVE" ? "text-red-500 font-semibold" : "text-muted-foreground"}`}>
+            {match.status}
+          </span>
+        </div>
+      )}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between text-sm">
-          <Link href={`/team/${match.homeTeam.id}`} className="truncate hover:underline">
+        <div className="flex items-center text-sm">
+          <div className="w-6 shrink-0" />
+          <span className="flex-1 truncate text-center font-medium group-hover:text-primary transition-colors">
             {match.homeTeam.name}
-          </Link>
-          <span className="font-bold tabular-nums">{match.status === "FT" ? match.homeGoals : "-"}</span>
+          </span>
+          <span className="w-6 shrink-0 text-right font-bold tabular-nums">
+            {match.status === "FT" ? match.homeGoals : "-"}
+          </span>
         </div>
-        <div className="flex items-center justify-between text-sm mt-1">
-          <Link href={`/team/${match.awayTeam.id}`} className="truncate hover:underline">
+        <div className="flex items-center text-sm mt-1">
+          <div className="w-6 shrink-0" />
+          <span className="flex-1 truncate text-center font-medium group-hover:text-primary transition-colors">
             {match.awayTeam.name}
-          </Link>
-          <span className="font-bold tabular-nums">{match.status === "FT" ? match.awayGoals : "-"}</span>
+          </span>
+          <span className="w-6 shrink-0 text-right font-bold tabular-nums">
+            {match.status === "FT" ? match.awayGoals : "-"}
+          </span>
         </div>
       </div>
-      <Link href={`/match/${match.id}`} className="shrink-0 text-muted-foreground hover:text-foreground">
+      <div className="shrink-0 text-muted-foreground group-hover:text-foreground transition-colors">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
-      </Link>
-    </div>
+      </div>
+    </Link>
   )
 }
 

@@ -374,3 +374,55 @@ export async function getTournamentProfile(
     return null
   }
 }
+
+export type NotificationItem = {
+  id: number
+  matchId: number
+  type: "ABOUT_TO_START" | "JUST_STARTED" | "FINISHED"
+  title: string
+  message: string
+  entityName: string | null
+  entityType: "Team" | "Player" | null
+  isRead: boolean
+  createdAt: string
+}
+
+export async function getNotifications(): Promise<{
+  notifications: NotificationItem[]
+  unreadCount: number
+}> {
+  try {
+    const res = await fetch(`${API_URL}/api/notifications`, {
+      cache: "no-store",
+      credentials: "include",
+    })
+    if (!res.ok) return { notifications: [], unreadCount: 0 }
+    return await res.json()
+  } catch {
+    return { notifications: [], unreadCount: 0 }
+  }
+}
+
+export async function markNotificationAsRead(id: number): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/notifications/${id}/read`, {
+      method: "PATCH",
+      credentials: "include",
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+export async function markAllNotificationsAsRead(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_URL}/api/notifications/read-all`, {
+      method: "POST",
+      credentials: "include",
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}

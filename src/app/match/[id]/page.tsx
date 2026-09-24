@@ -275,7 +275,14 @@ export default async function MatchPage({
                               : event.eventtype === "Substitution"
                                 ? (
                                   <>
-                                    {event.playerid && event.playername ? <Link href={`/player/${event.playerid}`} className="hover:underline text-blue-600">{event.playername}</Link> : event.playername ?? "Player"} substituted
+                                    <span className="text-red-500 font-bold">↓</span>{" "}
+                                    {event.playerid && event.playername ? <Link href={`/player/${event.playerid}`} className="hover:underline text-blue-600">{event.playername}</Link> : event.playername ?? "Player"}
+                                    {event.assistplayername && (
+                                      <span className="text-muted-foreground font-normal">
+                                        {" "}for <span className="text-emerald-500 font-bold">↑</span>{" "}
+                                        {event.substitutionplayerid ? <Link href={`/player/${event.substitutionplayerid}`} className="hover:underline text-blue-600">{event.assistplayername}</Link> : event.assistplayername}
+                                      </span>
+                                    )}
                                   </>
                                 )
                                 : (
@@ -289,7 +296,7 @@ export default async function MatchPage({
                           {event.teamname}
                         </div>
 
-                        {event.assistplayername && (
+                        {event.assistplayername && event.eventtype !== "Substitution" && (
                           <div className="text-xs text-muted-foreground">
                             Assist: {event.assistplayername}
                           </div>

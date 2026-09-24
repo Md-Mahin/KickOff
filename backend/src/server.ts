@@ -9,6 +9,7 @@ import searchRoutes from "./routes/searchRoutes";
 import teamRoutes from "./routes/teamRoutes";
 import playerRoutes from "./routes/playerRoutes";
 import tournamentRoutes from "./routes/tournamentRoutes";
+import notificationRoutes from "./routes/notificationRoutes";
 import { initializeDatabase, pool } from "./db";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
@@ -48,6 +49,7 @@ app.use("/api/search", searchRoutes);
 app.use("/api/teams", teamRoutes);
 app.use("/api/players", playerRoutes);
 app.use("/api/tournaments", tournamentRoutes);
+app.use("/api/notifications", notificationRoutes);
 
 const PORT = process.env.PORT || 5000;
 

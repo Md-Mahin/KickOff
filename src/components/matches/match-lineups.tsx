@@ -130,7 +130,36 @@ function Bench({ lineup, events, side }: { lineup: MatchLineup; events: MatchEve
 }
 
 export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; events: MatchEvent[] }) {
-  if (lineups.length === 0) return null
+  if (lineups.length === 0) {
+    return (
+      <Card className="mt-6 border-slate-200">
+        <CardContent className="flex flex-col items-center justify-center p-8 text-center sm:p-10">
+          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500 mb-3">
+            <svg
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              strokeWidth={1.5}
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z"
+              />
+            </svg>
+          </div>
+          <h3 className="text-base font-semibold text-slate-900">Lineups Not Announced</h3>
+          <p className="mt-1 max-w-md text-xs text-muted-foreground">
+            Lineups are announced approximately 1 hour before kickoff. Check back closer to match time.
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const hasSubstitutes = lineups.some((l) => (l.substitutes?.length ?? 0) > 0)
+  const hasSubstitutions = events.some((e) => e.eventtype === "Substitution")
 
   return (
     <Card className="mt-6">
@@ -138,9 +167,15 @@ export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; even
         <div className="mb-5 flex items-end justify-between gap-4">
           <div>
             <h2 className="font-semibold">Lineups</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Starters, ratings, match actions and substitutions</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {hasSubstitutes
+                ? "Starters, ratings, match actions and substitutions"
+                : "Starting XI, tactical formations and ratings"}
+            </p>
           </div>
-          <div className="hidden text-[10px] text-muted-foreground sm:block">↑ entered · ↓ substituted</div>
+          {hasSubstitutions && (
+            <div className="hidden text-[10px] text-muted-foreground sm:block">↑ entered · ↓ substituted</div>
+          )}
         </div>
         <div className="overflow-x-auto pb-1">
           <div className="relative mx-auto aspect-[1.55/1] min-w-[680px] overflow-hidden rounded-lg border-4 border-white/70 bg-[#079b68] shadow-inner">
@@ -176,9 +211,18 @@ export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; even
             </div>
           ))}
         </div>
-        <div className="mt-4 grid gap-5 border-t pt-5 lg:grid-cols-2">
-          {lineups.slice(0, 2).map((lineup, index) => <Bench key={`${lineup.team.id || lineup.team.name || "team"}-bench-${index}`} lineup={lineup} events={events} side={index === 0 ? "home" : "away"} />)}
-        </div>
+        {hasSubstitutes && (
+          <div className="mt-4 grid gap-5 border-t pt-5 lg:grid-cols-2">
+            {lineups.slice(0, 2).map((lineup, index) => (
+              <Bench
+                key={`${lineup.team.id || lineup.team.name || "team"}-bench-${index}`}
+                lineup={lineup}
+                events={events}
+                side={index === 0 ? "home" : "away"}
+              />
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   )

@@ -16,6 +16,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "KickOff | Football scores and fixtures",
   description: "Follow live football scores, fixtures, and match stats.",
+  icons: {
+    icon: "/kickoff_main_logo.png",
+    shortcut: "/kickoff_main_logo.png",
+    apple: "/kickoff_main_logo.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

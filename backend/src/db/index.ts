@@ -1,6 +1,7 @@
 import { Pool } from "pg";
 import dotenv from "dotenv";
 import path from "path";
+import fs from "fs";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
@@ -30,68 +31,6 @@ export async function initializeDatabase() {
       ADD COLUMN IF NOT EXISTS Position VARCHAR(10),
       ADD COLUMN IF NOT EXISTS Photo TEXT;
 
-    -- Ensure seeded data has a formation and positions
-    UPDATE Lineup SET Formation = '4-3-3' WHERE MatchID = 1 AND Formation IS NULL;
-    UPDATE Lineup SET Formation = '3-5-2' WHERE MatchID = 2 AND TeamID = 3 AND Formation IS NULL;
-    UPDATE Lineup SET Formation = '4-4-2' WHERE MatchID = 2 AND TeamID = 4 AND Formation IS NULL;
-
-    -- Ensure Match 1 has full 11-player squads
-    INSERT INTO Player (PlayerID, Name, Position) VALUES
-      (1, 'David Raya', 'G'),
-      (2, 'Ben White', 'D'),
-      (3, 'William Saliba', 'D'),
-      (4, 'Gabriel Magalhaes', 'D'),
-      (5, 'Oleksandr Zinchenko', 'D'),
-      (6, 'Declan Rice', 'M'),
-      (7, 'Martin Odegaard', 'M'),
-      (8, 'Kai Havertz', 'M'),
-      (9, 'Bukayo Saka', 'F'),
-      (10, 'Gabriel Jesus', 'F'),
-      (11, 'Gabriel Martinelli', 'F'),
-      (12, 'Thibaut Courtois', 'G'),
-      (13, 'Dani Carvajal', 'D'),
-      (14, 'Antonio Rudiger', 'D'),
-      (15, 'Eder Militao', 'D'),
-      (16, 'Ferland Mendy', 'D'),
-      (17, 'Federico Valverde', 'M'),
-      (18, 'Aurelien Tchouameni', 'M'),
-      (19, 'Jude Bellingham', 'M'),
-      (20, 'Rodrygo', 'F'),
-      (21, 'Kylian Mbappe', 'F'),
-      (22, 'Vinicius Junior', 'F')
-    ON CONFLICT (PlayerID) DO UPDATE SET
-      Name = EXCLUDED.Name,
-      Position = EXCLUDED.Position;
-
-    INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation, Position, JerseyNumber) VALUES
-      (1, 1, 1, 'Starter', '4-3-3', 'G', 22),
-      (1, 1, 2, 'Starter', '4-3-3', 'D', 4),
-      (1, 1, 3, 'Starter', '4-3-3', 'D', 2),
-      (1, 1, 4, 'Starter', '4-3-3', 'D', 6),
-      (1, 1, 5, 'Starter', '4-3-3', 'D', 35),
-      (1, 1, 6, 'Starter', '4-3-3', 'M', 41),
-      (1, 1, 7, 'Starter', '4-3-3', 'M', 8),
-      (1, 1, 8, 'Starter', '4-3-3', 'M', 29),
-      (1, 1, 9, 'Starter', '4-3-3', 'F', 7),
-      (1, 1, 10, 'Starter', '4-3-3', 'F', 9),
-      (1, 1, 11, 'Starter', '4-3-3', 'F', 11),
-      (1, 2, 12, 'Starter', '4-3-3', 'G', 1),
-      (1, 2, 13, 'Starter', '4-3-3', 'D', 2),
-      (1, 2, 14, 'Starter', '4-3-3', 'D', 22),
-      (1, 2, 15, 'Starter', '4-3-3', 'D', 3),
-      (1, 2, 16, 'Starter', '4-3-3', 'D', 23),
-      (1, 2, 17, 'Starter', '4-3-3', 'M', 15),
-      (1, 2, 18, 'Starter', '4-3-3', 'M', 14),
-      (1, 2, 19, 'Starter', '4-3-3', 'M', 5),
-      (1, 2, 20, 'Starter', '4-3-3', 'F', 11),
-      (1, 2, 21, 'Starter', '4-3-3', 'F', 9),
-      (1, 2, 22, 'Starter', '4-3-3', 'F', 7)
-    ON CONFLICT (MatchID, TeamID, PlayerID) DO UPDATE SET
-      Status = EXCLUDED.Status,
-      Formation = EXCLUDED.Formation,
-      Position = EXCLUDED.Position,
-      JerseyNumber = EXCLUDED.JerseyNumber;
-
     CREATE TABLE IF NOT EXISTS UserSessions (
       SessionID UUID PRIMARY KEY,
       UserID INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
@@ -103,6 +42,32 @@ export async function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON UserSessions(UserID);
     CREATE INDEX IF NOT EXISTS idx_user_sessions_active
       ON UserSessions(SessionID) WHERE RevokedAt IS NULL;
+
+    ALTER TABLE Event DROP CONSTRAINT IF EXISTS event_eventtype_check;
+    ALTER TABLE Event ADD CONSTRAINT event_eventtype_check
+      CHECK (EventType IN ('Goal', 'Card', 'Foul', 'Substitution'));
+
+    CREATE TABLE IF NOT EXISTS Substitution (
+      EventID INT PRIMARY KEY REFERENCES Event(EventID) ON DELETE CASCADE,
+      InPlayerID INT REFERENCES Player(PlayerID)
+    );
+
+    CREATE TABLE IF NOT EXISTS Notification (
+      NotificationID SERIAL PRIMARY KEY,
+      UserID         INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
+      MatchID        INT NOT NULL REFERENCES Match(MatchID) ON DELETE CASCADE,
+      Type           VARCHAR(30) NOT NULL CHECK (Type IN ('ABOUT_TO_START', 'JUST_STARTED', 'FINISHED')),
+      Title          VARCHAR(255) NOT NULL,
+      Message        TEXT NOT NULL,
+      EntityName     VARCHAR(100),
+      EntityType     VARCHAR(20) CHECK (EntityType IN ('Team', 'Player')),
+      IsRead         BOOLEAN NOT NULL DEFAULT FALSE,
+      CreatedAt      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT uq_user_match_type UNIQUE (UserID, MatchID, Type)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_notification_user ON Notification(UserID, IsRead);
+    CREATE INDEX IF NOT EXISTS idx_notification_match ON Notification(MatchID);
   `);
 
   await pool.query(`
@@ -117,4 +82,19 @@ export async function initializeDatabase() {
     END
     $$;
   `);
+
+  try {
+    const matchCountRes = await pool.query(`SELECT COUNT(*) FROM Match`);
+    if (parseInt(matchCountRes.rows[0].count, 10) < 10) {
+      console.log("Database has fewer than 10 matches. Populating full match schedule from seed.sql...");
+      const seedSqlPath = path.resolve(__dirname, "../../database/seed.sql");
+      if (fs.existsSync(seedSqlPath)) {
+        const seedSql = fs.readFileSync(seedSqlPath, "utf-8");
+        await pool.query(seedSql);
+        console.log("Successfully populated 18 matches, squads, and standings!");
+      }
+    }
+  } catch (err) {
+    console.warn("Auto-seed check warning:", (err as Error).message);
+  }
 }

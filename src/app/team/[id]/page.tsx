@@ -3,6 +3,7 @@ import Link from "next/link"
 import { getTeamProfile } from "@/lib/api"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { MatchesWidget } from "@/components/team/matches-widget"
 import type { TeamMatch, TeamStanding, TeamStandingRow } from "@/lib/matches"
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -25,7 +26,7 @@ function ResultBadge({ result }: { result: "W" | "L" | "D" | null }) {
     D: "bg-gray-200 text-gray-600",
   }
   return (
-    <span className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs font-bold ${colors[result]}`}>
+    <span className={`inline-flex h-6 w-6 items-center justify-center rounded text-xs font-bold leading-none select-none text-center ${colors[result]}`}>
       {result}
     </span>
   )
@@ -38,7 +39,7 @@ function ResultPill({ result }: { result: "W" | "L" | "D" }) {
     D: "bg-gray-400",
   }
   return (
-    <span className={`inline-block h-5 w-5 rounded-full text-[10px] font-bold text-white flex items-center justify-center ${colors[result]}`}>
+    <span className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold leading-none select-none text-white text-center ${colors[result]}`}>
       {result}
     </span>
   )
@@ -113,7 +114,9 @@ export default async function TeamPage({
                   {/* Name + followers */}
                   <div className="flex items-center gap-3">
                     <h1 className="text-2xl font-bold">{team.name}</h1>
-                    <span className="text-sm text-blue-600">8.5M followers</span>
+                    <span className="text-sm font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                      {(team.followers ?? 0).toLocaleString()} {(team.followers ?? 0) === 1 ? "follower" : "followers"}
+                    </span>
                   </div>
 
                   {/* Country + Coach */}
@@ -125,16 +128,28 @@ export default async function TeamPage({
                     </span>
                   </div>
 
-                  {/* Venue + League */}
+                  {/* Venue + League / Tournaments */}
                   <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
                     {homeVenue && (
                       <span className="flex items-center gap-1">
                         🏟️ {homeVenue.name}
                       </span>
                     )}
-                    <span className="flex items-center gap-1">
-                      ⚽ {primaryLeague}
-                    </span>
+                    {tournaments.length > 0 ? (
+                      tournaments.map((t) => (
+                        <Link
+                          key={t.id}
+                          href={`/tournament/${t.id}`}
+                          className="flex items-center gap-1 hover:text-blue-600 hover:underline transition-colors"
+                        >
+                          ⚽ {t.name}
+                        </Link>
+                      ))
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        ⚽ {primaryLeague}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -143,9 +158,6 @@ export default async function TeamPage({
               <div className="flex flex-col items-end gap-3">
                 {/* Action buttons */}
                 <div className="flex items-center gap-2">
-                  <button className="rounded-lg border border-border px-4 py-1.5 text-sm font-medium hover:bg-muted transition-colors">
-                    Compare
-                  </button>
                   <button className="rounded-lg border border-border p-1.5 text-muted-foreground hover:text-yellow-500 hover:bg-muted transition-colors">
                     <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path d="M11.48 3.499a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z" /></svg>
                   </button>
@@ -194,16 +206,33 @@ function MiniMatchCard({ label, match, teamId }: { label: string; match: TeamMat
   return (
     <div className="w-44 rounded-lg border border-border bg-card p-3">
       <div className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{label}</div>
-      <div className="mt-1 text-[10px] text-muted-foreground">{match.tournament}</div>
+      <Link href={`/match/${match.id}`} className="mt-1 block text-[10px] text-muted-foreground hover:underline">
+        {match.tournament}
+      </Link>
       <div className="mt-1 text-[10px] text-muted-foreground">{formatDate(match.date)} • {formatTime(match.date)}</div>
       <div className="mt-2 flex items-center gap-2">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={opponentLogo} alt={opponent.name} className="h-6 w-6 rounded-full object-cover" />
-        <span className="truncate text-sm font-medium">{opponent.name}</span>
+        {opponent.id ? (
+          <Link
+            href={`/team/${opponent.id}`}
+            className="flex items-center gap-2 min-w-0 group hover:text-blue-600 transition-colors"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={opponentLogo} alt={opponent.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+            <span className="truncate text-sm font-medium group-hover:underline">{opponent.name}</span>
+          </Link>
+        ) : (
+          <div className="flex items-center gap-2 min-w-0">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={opponentLogo} alt={opponent.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+            <span className="truncate text-sm font-medium">{opponent.name}</span>
+          </div>
+        )}
       </div>
       {match.status === "FT" && (
         <div className="mt-1 flex items-center gap-2">
-          <span className="text-sm font-bold">{match.homeGoals} - {match.awayGoals}</span>
+          <Link href={`/match/${match.id}`} className="text-sm font-bold hover:underline">
+            {match.homeGoals} - {match.awayGoals}
+          </Link>
           <ResultBadge result={match.result} />
         </div>
       )}
@@ -211,125 +240,7 @@ function MiniMatchCard({ label, match, teamId }: { label: string; match: TeamMat
   )
 }
 
-/* ── Matches Widget (Left Column) ──────────────────────────────────────── */
 
-function MatchesWidget({
-  teamId,
-  finishedMatches,
-  upcomingMatches,
-}: {
-  teamId: number
-  finishedMatches: TeamMatch[]
-  upcomingMatches: TeamMatch[]
-}) {
-  // Group matches by tournament
-  function groupByTournament(list: TeamMatch[]) {
-    const groups: Record<string, TeamMatch[]> = {}
-    for (const m of list) {
-      ;(groups[m.tournament] ??= []).push(m)
-    }
-    return groups
-  }
-
-  const finishedGroups = groupByTournament(finishedMatches)
-  const upcomingGroups = groupByTournament(upcomingMatches)
-
-  return (
-    <Card>
-      <CardContent className="p-0">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
-          <h2 className="text-base font-semibold">Matches</h2>
-          <Badge variant="outline">All</Badge>
-        </div>
-
-        {/* Finished */}
-        {Object.keys(finishedGroups).length > 0 && (
-          <div>
-            <div className="border-b border-border bg-muted/50 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Finished
-            </div>
-            {Object.entries(finishedGroups).map(([tournament, mList]) => (
-              <div key={tournament}>
-                <div className="bg-muted/30 px-5 py-1.5 text-xs font-medium text-muted-foreground">
-                  ⚽ {tournament}
-                </div>
-                {mList.map((m) => (
-                  <MatchRow key={m.id} match={m} teamId={teamId} />
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Upcoming */}
-        {Object.keys(upcomingGroups).length > 0 && (
-          <div>
-            <div className="border-b border-border bg-muted/50 px-5 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Upcoming
-            </div>
-            {Object.entries(upcomingGroups).map(([tournament, mList]) => (
-              <div key={tournament}>
-                <div className="bg-muted/30 px-5 py-1.5 text-xs font-medium text-muted-foreground">
-                  ⚽ {tournament}
-                </div>
-                {mList.map((m) => (
-                  <MatchRow key={m.id} match={m} teamId={teamId} />
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {finishedMatches.length === 0 && upcomingMatches.length === 0 && (
-          <div className="p-6 text-center text-sm text-muted-foreground">No matches found.</div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
-/* ── Single Match Row ──────────────────────────────────────────────────── */
-
-function MatchRow({ match, teamId }: { match: TeamMatch; teamId: number }) {
-  return (
-    <Link href={`/match/${match.id}`} className="flex items-center gap-3 border-b border-border px-5 py-3 hover:bg-muted/40 transition-colors last:border-b-0">
-      {/* Date */}
-      <div className="w-16 shrink-0 text-xs text-muted-foreground leading-tight">
-        <div>{formatDate(match.date).split(" ").slice(0, 2).join(" ")}</div>
-        <div>{formatTime(match.date)}</div>
-      </div>
-
-      {/* Status */}
-      <div className="w-8 shrink-0 text-center">
-        <span className="text-[10px] font-bold text-muted-foreground">
-          {match.status}
-        </span>
-      </div>
-
-      {/* Teams + Score */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center justify-between text-sm">
-          <span className={`truncate ${match.homeTeam.id === teamId ? "font-semibold" : ""}`}>
-            {match.homeTeam.name}
-          </span>
-          <span className="font-bold tabular-nums">{match.status === "FT" ? match.homeGoals : "-"}</span>
-        </div>
-        <div className="flex items-center justify-between text-sm">
-          <span className={`truncate ${match.awayTeam.id === teamId ? "font-semibold" : ""}`}>
-            {match.awayTeam.name}
-          </span>
-          <span className="font-bold tabular-nums">{match.status === "FT" ? match.awayGoals : "-"}</span>
-        </div>
-      </div>
-
-      {/* Result badge */}
-      <div className="w-7 shrink-0 flex justify-center">
-        <ResultBadge result={match.result} />
-      </div>
-    </Link>
-  )
-}
 
 /* ── Standings Widget (Right Column) ───────────────────────────────────── */
 
@@ -440,8 +351,8 @@ function StandingRow({
         </span>
       </td>
       <td className="px-3 py-2 text-center">{row.goalsFor}</td>
-      <td className="px-3 py-2 hidden sm:table-cell">
-        <div className="flex items-center justify-center gap-0.5">
+      <td className="px-3 py-2 text-center hidden sm:table-cell">
+        <div className="flex items-center justify-center gap-1">
           {last5.length > 0
             ? last5.map((r, i) => <ResultPill key={i} result={r} />)
             : <span className="text-muted-foreground">—</span>

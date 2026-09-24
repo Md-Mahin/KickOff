@@ -31,6 +31,14 @@ router.get("/:id", async (req, res) => {
     }
 
     const teamRow = teamResult.rows[0];
+
+    // Follower count (actual users who follow this team in UserFollowsTeam)
+    const followersResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM UserFollowsTeam WHERE TeamID = $1`,
+      [teamId]
+    );
+    const followers = followersResult.rows[0]?.count ?? 0;
+
     const team = {
       id: teamRow.teamid,
       name: teamRow.name,
@@ -38,6 +46,7 @@ router.get("/:id", async (req, res) => {
       country: teamRow.countryname,
       club: teamRow.clubname,
       federation: teamRow.federationname,
+      followers,
     };
 
     // 2. Home venue (most common venue where team plays as home)
