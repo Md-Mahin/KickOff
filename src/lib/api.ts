@@ -7,6 +7,9 @@ import type {
   TeamProfile,
   PlayerProfile,
   TournamentProfile,
+  PlayerRankingsResponse,
+  PositionBreakdownResponse,
+  RatingDistributionResponse,
 } from "@/lib/matches"
 
 const API_URL =
@@ -510,3 +513,62 @@ export async function checkFollowStatus(
     return { following: false, authenticated: false }
   }
 }
+
+// ── Admin Performance & Rating APIs ──────────────────────────────────────────
+
+export async function getPlayerRankings(params?: {
+  position?: string
+  search?: string
+  limit?: number
+  offset?: number
+  sortBy?: string
+}): Promise<PlayerRankingsResponse> {
+  const query = new URLSearchParams()
+  if (params?.position) query.set("position", params.position)
+  if (params?.search) query.set("search", params.search)
+  if (params?.limit) query.set("limit", String(params.limit))
+  if (params?.offset) query.set("offset", String(params.offset))
+  if (params?.sortBy) query.set("sortBy", params.sortBy)
+
+  const res = await fetch(`${API_URL}/api/admin/player-rankings?${query.toString()}`, {
+    cache: "no-store",
+    credentials: "include",
+  })
+  if (!res.ok) throw new Error(`Failed to fetch rankings: ${res.status}`)
+  return res.json()
+}
+
+export async function getPositionBreakdown(): Promise<PositionBreakdownResponse> {
+  const res = await fetch(`${API_URL}/api/admin/position-breakdown`, {
+    cache: "no-store",
+    credentials: "include",
+  })
+  if (!res.ok) throw new Error(`Failed to fetch position breakdown: ${res.status}`)
+  return res.json()
+}
+
+export async function getRatingDistribution(): Promise<RatingDistributionResponse> {
+  const res = await fetch(`${API_URL}/api/admin/rating-distribution`, {
+    cache: "no-store",
+    credentials: "include",
+  })
+  if (!res.ok) throw new Error(`Failed to fetch rating distribution: ${res.status}`)
+  return res.json()
+}
+
+export async function recalculatePlayerRatings(): Promise<{
+  success: boolean
+  message: string
+  updatedCount: number
+  durationMs: number
+  timestamp: string
+}> {
+  const res = await fetch(`${API_URL}/api/admin/recalculate-ratings`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+  })
+  if (!res.ok) throw new Error(`Failed to recalculate: ${res.status}`)
+  return res.json()
+}
+

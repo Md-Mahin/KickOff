@@ -125,9 +125,20 @@ export default async function TeamPage({
                   {/* Country + Coach */}
                   <div className="mt-1 flex items-center gap-3 text-sm text-muted-foreground">
                     {team.country && <span>🌍 {team.country}</span>}
-                    <span className="flex items-center gap-1">
-                      <span className="inline-block h-5 w-5 rounded-full bg-gray-300" />
-                      Manager TBD
+                    <span className="flex items-center gap-1.5 font-medium text-foreground">
+                      {team.manager?.photo ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={team.manager.photo}
+                          alt={team.manager.name ?? "Manager"}
+                          className="h-5 w-5 rounded-full object-cover border border-slate-300 shadow-xs"
+                        />
+                      ) : (
+                        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-700">
+                          {team.manager?.name ? team.manager.name.slice(0, 2).toUpperCase() : "👔"}
+                        </span>
+                      )}
+                      <span>{team.manager?.name ? `Mgr: ${team.manager.name}` : "Manager"}</span>
                     </span>
                   </div>
 

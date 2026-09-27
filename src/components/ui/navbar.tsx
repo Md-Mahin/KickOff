@@ -12,11 +12,26 @@ import NotificationsMenu from "./notifications-menu"
 export default function Navbar() {
   const router = useRouter()
   const [signedIn, setSignedIn] = useState(false)
+  const [isAdmin, setIsAdmin] = useState(false)
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     setMounted(true)
-    fetch("http://localhost:5000/api/auth/me", { credentials: "include" }).then((response) => setSignedIn(response.ok)).catch(() => setSignedIn(false))
+    fetch("http://localhost:5000/api/auth/me", { credentials: "include" })
+      .then(async (response) => {
+        if (response.ok) {
+          const data = await response.json()
+          setSignedIn(true)
+          setIsAdmin(data.user?.role === "admin")
+        } else {
+          setSignedIn(false)
+          setIsAdmin(false)
+        }
+      })
+      .catch(() => {
+        setSignedIn(false)
+        setIsAdmin(false)
+      })
   }, [])
 
   async function logout() {
@@ -75,6 +90,15 @@ export default function Navbar() {
                   Dashboard
                 </Link>
 
+                {isAdmin && (
+                  <Link
+                    href="/admin"
+                    className="rounded-md px-3 py-2 text-sm font-medium text-amber-300 hover:bg-white/10 hover:text-white flex items-center gap-1.5 transition-colors"
+                  >
+                    <span>⚡</span> Admin Ratings
+                  </Link>
+                )}
+
               </div>
             </div>
           </div>
@@ -108,6 +132,15 @@ export default function Navbar() {
           >
             Dashboard
           </Link>
+
+          {isAdmin && (
+            <Link
+              href="/admin"
+              className="block rounded-md px-3 py-2 text-base font-medium text-amber-300 hover:bg-white/10"
+            >
+              Admin Ratings
+            </Link>
+          )}
 
         </div>
       </div>

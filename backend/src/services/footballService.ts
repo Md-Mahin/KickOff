@@ -1,4 +1,5 @@
 import { pool } from "../db";
+import { getCoachForTeam } from "./coachData";
 
 // ── League priority (lower = bigger / shown first) ───────────────────────────
 const LEAGUE_PRIORITY: Record<string, number> = {
@@ -527,6 +528,29 @@ export async function seedDefaultLineupForMatch(matchId: number, homeTeamId: num
     }
 
     for (const teamId of [homeTeamId, awayTeamId]) {
+      // Ensure coach exists for this match & team
+      const coachCheck = await pool.query(
+        `SELECT 1 FROM TeamMatchCoach WHERE MatchID = $1 AND TeamID = $2`,
+        [matchId, teamId]
+      );
+      if (coachCheck.rows.length === 0) {
+        const tCoach = await pool.query(
+          `SELECT Name, CoachName, CoachPhoto FROM Team WHERE TeamID = $1`,
+          [teamId]
+        );
+        const tRow = tCoach.rows[0];
+        const coachInfo = tRow?.coachname
+          ? { name: tRow.coachname, photo: tRow.coachphoto }
+          : getCoachForTeam(teamId, tRow?.name);
+
+        await pool.query(
+          `INSERT INTO TeamMatchCoach (MatchID, TeamID, CoachName, CoachPhoto)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (MatchID, TeamID) DO NOTHING`,
+          [matchId, teamId, coachInfo.name, coachInfo.photo]
+        );
+      }
+
       const countRes = await pool.query(
         `SELECT COUNT(*) FROM Lineup WHERE MatchID = $1 AND TeamID = $2 AND Status = 'Starter'`,
         [matchId, teamId]
@@ -1356,11 +1380,42 @@ export async function getMatchLineups(fixtureId: number) {
       );
 
       const coachRow = coachRes.rows[0];
+      let coachId = coachRow?.coachid ? Number(coachRow.coachid) : null;
+      let coachName = coachRow?.coachname ?? null;
+      let coachPhoto = coachRow?.coachphoto ?? null;
+
+      if (!coachName) {
+        const teamRes = await pool.query(
+          `SELECT Name, CoachName, CoachPhoto FROM Team WHERE TeamID = $1`,
+          [teamId]
+        );
+        const tRow = teamRes.rows[0];
+        if (tRow?.coachname) {
+          coachName = tRow.coachname;
+          coachPhoto = tRow.coachphoto;
+        } else {
+          const fallback = getCoachForTeam(teamId, tRow?.name);
+          coachName = fallback.name;
+          coachPhoto = fallback.photo;
+        }
+
+        // Cache into TeamMatchCoach
+        if (coachName) {
+          pool.query(
+            `INSERT INTO TeamMatchCoach (MatchID, TeamID, CoachID, CoachName, CoachPhoto)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (MatchID, TeamID) DO UPDATE SET
+               CoachName = EXCLUDED.CoachName,
+               CoachPhoto = EXCLUDED.CoachPhoto`,
+            [matchId, teamId, coachId, coachName, coachPhoto]
+          ).catch((e) => console.warn("Failed caching coach into TeamMatchCoach:", e.message));
+        }
+      }
 
       const coach = {
-        id: coachRow?.coachid ?? null,
-        name: coachRow?.coachname ?? null,
-        photo: coachRow?.coachphoto ?? null,
+        id: coachId,
+        name: coachName,
+        photo: coachPhoto,
       };
 
       // ----------------------------------------------------------

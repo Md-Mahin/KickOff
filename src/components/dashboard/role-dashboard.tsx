@@ -1,9 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { AdminPerformanceDashboard } from "@/components/dashboard/admin-performance-dashboard"
 
 const API_URL = "http://localhost:5000/api"
 
@@ -25,6 +27,7 @@ export function RoleDashboard() {
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
   const [teamId, setTeamId] = useState("")
   const [message, setMessage] = useState("")
+  const [adminTab, setAdminTab] = useState<"performance" | "users">("performance")
 
   useEffect(() => {
     api("/auth/me").then((data) => {
@@ -63,7 +66,43 @@ export function RoleDashboard() {
 
   return (
     <Card className="mt-8">
-      <CardHeader><CardTitle className="flex items-center justify-between"><span>{user.role === "admin" ? "Administrator console" : "Fan workspace"}</span><span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase">{user.role}</span></CardTitle></CardHeader>
+      <CardHeader>
+        <CardTitle className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span>{user.role === "admin" ? "Administrator Console" : "Fan Workspace"}</span>
+            <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase">{user.role}</span>
+          </div>
+          {user.role === "admin" && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-xs font-semibold">
+                <button
+                  type="button"
+                  onClick={() => setAdminTab("performance")}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    adminTab === "performance" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Ratings & Stats
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminTab("users")}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    adminTab === "users" ? "bg-white text-slate-900 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  Users ({adminUsers.length})
+                </button>
+              </div>
+              <Link href="/admin">
+                <Button variant="outline" size="sm" className="text-xs">
+                  Full Page View ↗
+                </Button>
+              </Link>
+            </div>
+          )}
+        </CardTitle>
+      </CardHeader>
       <CardContent className="space-y-5">
         {message ? <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">{message}</p> : null}
         {user.role === "fan" ? (
@@ -78,7 +117,11 @@ export function RoleDashboard() {
             <div><h3 className="mb-2 text-sm font-semibold">Your followed teams</h3>{followed.length ? <ul className="space-y-2">{followed.map((team) => <li className="flex items-center justify-between rounded-md border px-3 py-2 text-sm" key={team.teamId}><span>{team.teamName}</span><Button type="button" variant="ghost" size="sm" onClick={() => removeFollow(team.teamId)}>Remove</Button></li>)}</ul> : <p className="text-sm text-muted-foreground">You are not following any teams yet.</p>}</div>
           </div>
         ) : (
-          <div><h3 className="mb-2 text-sm font-semibold">Registered users</h3><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b text-muted-foreground"><th className="py-2">Name</th><th>Email</th><th>Role</th></tr></thead><tbody>{adminUsers.map((item) => <tr className="border-b last:border-0" key={item.id}><td className="py-2">{item.name}</td><td>{item.email}</td><td className="uppercase">{item.role}</td></tr>)}</tbody></table></div></div>
+          adminTab === "performance" ? (
+            <AdminPerformanceDashboard />
+          ) : (
+            <div><h3 className="mb-2 text-sm font-semibold">Registered users</h3><div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr className="border-b text-muted-foreground"><th className="py-2">Name</th><th>Email</th><th>Role</th></tr></thead><tbody>{adminUsers.map((item) => <tr className="border-b last:border-0" key={item.id}><td className="py-2">{item.name}</td><td>{item.email}</td><td className="uppercase">{item.role}</td></tr>)}</tbody></table></div></div>
+          )
         )}
       </CardContent>
     </Card>

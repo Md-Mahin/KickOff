@@ -9,6 +9,9 @@
     "start": "node dist/server.js",
     "seed": "tsx src/db/seed.ts",
     "seed:users": "tsx scripts/seed100Users.ts",
+    "seed:coaches": "tsx scripts/seedCoaches.ts",
+    "seed:player-stats": "tsx scripts/seedPlayerStats.ts",
+    "test:ratings": "tsx scripts/testRatingAlgorithm.ts",
     "sync-api": "tsx scripts/syncApiFootball.ts",
     "sync-events": "tsx scripts/syncEvents.ts"
   },

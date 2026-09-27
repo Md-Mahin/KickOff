@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { optionalAuth } from "../middleware/auth";
+import { getCoachForTeam } from "../services/coachData";
 
 const router = Router();
 
@@ -16,7 +17,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
 
     // 1. Team info
     const teamResult = await pool.query(
-      `SELECT t.TeamID, t.Name, t.Logo,
+      `SELECT t.TeamID, t.Name, t.Logo, t.CoachName, t.CoachPhoto,
               c.Name AS CountryName,
               cl.Name AS ClubName,
               f.Name AS FederationName
@@ -33,6 +34,9 @@ router.get("/:id", optionalAuth, async (req, res) => {
     }
 
     const teamRow = teamResult.rows[0];
+    const fallbackCoach = getCoachForTeam(teamId, teamRow.name);
+    const managerName = teamRow.coachname || fallbackCoach.name;
+    const managerPhoto = teamRow.coachphoto || fallbackCoach.photo;
 
     // Follower count (actual users who follow this team in UserFollowsTeam)
     const followersResult = await pool.query(
@@ -57,6 +61,10 @@ router.get("/:id", optionalAuth, async (req, res) => {
       country: teamRow.countryname,
       club: teamRow.clubname,
       federation: teamRow.federationname,
+      manager: {
+        name: managerName,
+        photo: managerPhoto,
+      },
       followers,
       isFollowing,
     };

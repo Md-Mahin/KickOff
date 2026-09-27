@@ -11,6 +11,7 @@ import teamRoutes from "./routes/teamRoutes";
 import playerRoutes from "./routes/playerRoutes";
 import tournamentRoutes from "./routes/tournamentRoutes";
 import notificationRoutes from "./routes/notificationRoutes";
+import adminRoutes from "./routes/adminRoutes";
 import { initializeDatabase, pool } from "./db";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
@@ -51,6 +52,7 @@ app.use("/api/teams", teamRoutes);
 app.use("/api/players", playerRoutes);
 app.use("/api/tournaments", tournamentRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/admin", adminRoutes);
 
 const PORT = process.env.PORT || 5000;
 

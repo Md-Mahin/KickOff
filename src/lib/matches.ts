@@ -80,6 +80,10 @@ export type TeamInfo = {
   federation: string | null
   followers?: number
   isFollowing?: boolean
+  manager?: {
+    name: string | null
+    photo: string | null
+  }
 }
 
 export type TeamVenue = {
@@ -211,4 +215,98 @@ export type TournamentProfile = {
   isFollowing?: boolean
   matches: TeamMatch[]
   standings: TournamentStandingRow[]
+}
+
+// ── Admin Performance & Rating Types ──────────────────────────────────────────
+
+export type PlayerRankingItem = {
+  rank: number
+  playerId: number
+  name: string
+  position: string
+  photo: string | null
+  team: string
+  teamId: number | null
+  rating: number
+  matchesPlayed: number
+  totalMinutes: number
+  goals: number
+  assists: number
+  shots: number
+  shotsOnTarget: number
+  passes: number
+  keyPasses: number
+  tackles: number
+  interceptions: number
+  clearances: number
+  saves: number
+  cleanSheets: number
+  yellowCards: number
+  redCards: number
+  goalsConceded: number
+  goalsPer90: number
+  assistsPer90: number
+}
+
+export type PlayerRankingsResponse = {
+  rankings: PlayerRankingItem[]
+  total: number
+  limit: number
+  offset: number
+  hasMore: boolean
+}
+
+export type TopPositionPlayer = {
+  playerId: number
+  name: string
+  position: string
+  photo: string | null
+  team: string
+  rating: number
+  matchesPlayed: number
+  totalMinutes: number
+  goals: number
+  assists: number
+  tackles: number
+  saves: number
+  cleanSheets: number
+  posRank: number
+}
+
+export type PositionBreakdownResponse = {
+  forwards: TopPositionPlayer[]
+  midfielders: TopPositionPlayer[]
+  defenders: TopPositionPlayer[]
+  goalkeepers: TopPositionPlayer[]
+  positionAverages: {
+    position: string
+    count: number
+    avgrating: string
+    maxrating: string
+    minrating: string
+  }[]
+}
+
+export type RatingTier = {
+  id: string
+  name: string
+  description: string
+  count: number
+  percentage: number
+  color: string
+}
+
+export type RatingDistributionResponse = {
+  tiers: RatingTier[]
+  totalPlayers: number
+  averageRating: number
+  highestRating: number
+  lowestRating: number
+  topPlayer: {
+    id: number
+    name: string
+    position: string
+    rating: number
+    team: string
+  } | null
 }
