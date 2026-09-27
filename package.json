@@ -21,7 +21,8 @@
     "dev:api": "npm --prefix backend run dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:formation": "npx tsx scripts/testFormationLayout.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

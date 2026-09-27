@@ -125,7 +125,10 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
     league: fixture.league.name,
     leagueId: fixture.league.id,
     country: fixture.league.country ?? "International",
-  }
+    events: (fixture as any).events ?? [],
+    lineups: (fixture as any).lineups ?? [],
+    _pipelineMetadata: (fixture as any)._pipelineMetadata ?? null,
+  } as MatchWithLeague & { events?: MatchEvent[]; lineups?: MatchLineup[]; _pipelineMetadata?: any }
 }
 
 const TOP_LEAGUE_ORDER = [
@@ -571,4 +574,42 @@ export async function recalculatePlayerRatings(): Promise<{
   if (!res.ok) throw new Error(`Failed to recalculate: ${res.status}`)
   return res.json()
 }
+
+// ── Strict Pipeline & Fallback Match APIs ────────────────────────────────────
+
+export type BasicMatchItem = {
+  id: number
+  leagueId?: number
+  league: string
+  country: string
+  homeTeam: string
+  homeTeamId: number
+  homeLogo?: string | null
+  awayTeam: string
+  awayTeamId: number
+  awayLogo?: string | null
+  homeScore?: number | null
+  awayScore?: number | null
+  status: "LIVE" | "FT" | "UPCOMING"
+  minute?: number | null
+  date: string
+}
+
+export type BasicMatchesResult = {
+  source: "API-Football" | "Mock Fallback"
+  matches: BasicMatchItem[]
+}
+
+export async function getBasicMatches(): Promise<BasicMatchesResult> {
+  const res = await fetch(`${API_URL}/api/matches/basic`, { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch basic matches: ${res.status}`)
+  return res.json()
+}
+
+export async function getMatchDetailsPipeline(matchId: number): Promise<any> {
+  const res = await fetch(`${API_URL}/api/matches/${matchId}/details`, { cache: "no-store" })
+  if (!res.ok) throw new Error(`Failed to fetch match details for #${matchId}: ${res.status}`)
+  return res.json()
+}
+
 

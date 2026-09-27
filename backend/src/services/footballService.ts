@@ -878,18 +878,11 @@ export async function getMatchById(id: number) {
 }
 
 function applyEventLifecycleFilter(events: any[], matchDate: Date | null) {
-  if (!matchDate) return events;
+  if (!matchDate || events.length > 0) return events;
   const mins = Math.floor((Date.now() - matchDate.getTime()) / 60000);
-
   if (mins < 0) {
-    // Before kickoff: No events occur before the match happens
     return [];
-  } else if (mins < 120) {
-    // LIVE match: Only events that have occurred so far
-    const currentElapsed = Math.min(mins, 90);
-    return events.filter(e => (e.eventtime ?? 0) <= currentElapsed);
   }
-  // FT (mins >= 120): Match completed, records stay forever
   return events;
 }
 
@@ -905,11 +898,10 @@ export async function seedDefaultEventsForMatch(fixtureId: number) {
 
     if (!matchDate) return;
     const mins = Math.floor((Date.now() - matchDate.getTime()) / 60000);
-    // Do NOT generate events for upcoming matches before kickoff
-    if (mins < 0) return;
-
     const homeGoals = Number(match.homegoals ?? 0);
     const awayGoals = Number(match.awaygoals ?? 0);
+    // Only skip if genuinely an upcoming match with 0 goals recorded
+    if (mins < 0 && homeGoals === 0 && awayGoals === 0) return;
     const homeTeamId = Number(match.hometeamid);
     const awayTeamId = Number(match.awayteamid);
 
@@ -1078,8 +1070,12 @@ export async function getMatchEvents(fixtureId: number) {
   if (matchDate) {
     const mins = Math.floor((Date.now() - matchDate.getTime()) / 60000);
     if (mins < 0) {
-      // Kickoff has not occurred yet; no events recorded or shown before kickoff
-      return [];
+      const gRes = await pool.query(`SELECT HomeGoals, AwayGoals FROM Match WHERE MatchID = $1`, [fixtureId]);
+      const hg = Number(gRes.rows[0]?.homegoals ?? 0);
+      const ag = Number(gRes.rows[0]?.awaygoals ?? 0);
+      if (hg === 0 && ag === 0) {
+        return [];
+      }
     }
   }
 
@@ -1179,7 +1175,7 @@ export async function getMatchEvents(fixtureId: number) {
       cardtype: row.cardtype,
     }))
 
-    return applyEventLifecycleFilter(mappedDb, matchDate);
+    return mappedDb;
   } catch {
     return []
   }

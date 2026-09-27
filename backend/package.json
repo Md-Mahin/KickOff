@@ -13,6 +13,7 @@
     "seed:player-stats": "tsx scripts/seedPlayerStats.ts",
     "seed:admins": "tsx scripts/seedAdminUsers.ts",
     "test:ratings": "tsx scripts/testRatingAlgorithm.ts",
+    "test:pipeline": "tsx scripts/testMatchPipeline.ts",
     "sync-api": "tsx scripts/syncApiFootball.ts",
     "sync-events": "tsx scripts/syncEvents.ts"
   },

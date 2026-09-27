@@ -3,7 +3,7 @@ import Link from "next/link"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { getMatchById, getMatchEvents, getMatchLineups } from "@/lib/api"
-import type { MatchWithLeague } from "@/lib/matches"
+import type { MatchWithLeague, MatchEvent, MatchLineup } from "@/lib/matches"
 import Image from "next/image"
 import { LocalMatchTime } from "@/components/matches/local-match-time"
 import { MatchLineups } from "@/components/matches/match-lineups"
@@ -76,21 +76,46 @@ export default async function MatchPage({
     getMatchLineups(matchId),
   ])
 
+  const matchAny = match as any
+  const finalEvents: MatchEvent[] =
+    events && events.length > 0
+      ? events
+      : matchAny.events && matchAny.events.length > 0
+        ? (matchAny.events as MatchEvent[])
+        : []
+
+  const finalLineups: MatchLineup[] =
+    lineups && lineups.length > 0
+      ? lineups
+      : matchAny.lineups && matchAny.lineups.length > 0
+        ? (matchAny.lineups as MatchLineup[])
+        : []
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <main className="mx-auto max-w-5xl px-4 py-8">
 
-        {/* League */}
-        <div className="mb-4 text-sm text-muted-foreground flex items-center gap-1">
-          {match.leagueId ? (
-            <Link href={`/tournament/${match.leagueId}`} className="hover:underline hover:text-slate-900 font-medium">
-              {match.league}
-            </Link>
-          ) : (
-            <span className="font-medium">{match.league}</span>
-          )}
-          <span>•</span>
-          <span>{match.country}</span>
+        {/* League & Data Pipeline Status */}
+        <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-1">
+            {match.leagueId ? (
+              <Link href={`/tournament/${match.leagueId}`} className="hover:underline hover:text-slate-900 font-medium">
+                {match.league}
+              </Link>
+            ) : (
+              <span className="font-medium">{match.league}</span>
+            )}
+            <span>•</span>
+            <span>{match.country}</span>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs">
+            <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="font-semibold text-slate-700">Pipeline Active:</span>
+            <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600 border border-slate-200">
+              API/Mock → PostgreSQL DB → Client
+            </span>
+          </div>
         </div>
 
         {/* Match header */}
@@ -244,13 +269,13 @@ export default async function MatchPage({
                 Match Events
               </h2>
 
-              {events.length === 0 ? (
+              {finalEvents.length === 0 ? (
                 <div className="mt-4 text-sm text-muted-foreground">
                   No events recorded for this match.
                 </div>
               ) : (
                 <div className="mt-5 space-y-4">
-                  {events.map((event, index) => (
+                  {finalEvents.map((event, index) => (
                     <div
                       key={`${event.eventid || "event"}-${event.eventtime ?? "time"}-${index}`}
                       className="flex items-center gap-4"
@@ -313,7 +338,7 @@ export default async function MatchPage({
 
         </div>
 
-        <MatchLineups lineups={lineups} events={events} />
+        <MatchLineups lineups={finalLineups} events={finalEvents} />
 
       </main>
     </div>

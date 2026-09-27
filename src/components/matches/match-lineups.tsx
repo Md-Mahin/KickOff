@@ -34,79 +34,171 @@ function getPlayerRole(pos: string | null | undefined): "G" | "D" | "M" | "F" {
 }
 
 /**
- * Calculates horizontal pitch coordinates (left% and top%)
- * - Home team defends Left (X=0) and attacks Right (X=100)
- * - Away team defends Right (X=100) and attacks Left (X=0)
- * - Generous vertical and horizontal spacing to prevent crowded icons
+ * Parses formation strings like "4-3-3", "4-2-3-1", "3-5-2", "4-4-2", "5-3-2", "3-4-3", "4-1-4-1", "5-4-1", "3-4-2-1", etc.
+ * Returns the outfield line counts, e.g. [4, 2, 3, 1] for "4-2-3-1".
  */
-function playerPosition(
-  player: MatchLineupPlayer,
-  index: number,
-  players: MatchLineupPlayer[],
-  side: "home" | "away"
-) {
-  // Infer role if not set (standard starter order: 1 GK, 4 DEF, 3 MID, 3 FWD)
-  let role = getPlayerRole(player.position)
-  if (!player.position) {
-    if (index === 0) role = "G"
-    else if (index <= 4) role = "D"
-    else if (index <= 7) role = "M"
-    else role = "F"
+export function parseFormationLines(formationStr?: string | null): number[] {
+  if (!formationStr || typeof formationStr !== "string") {
+    return [4, 3, 3]
   }
 
-  // Filter all players in the same line/role
-  const rolePlayers = players.filter((candidate, cIdx) => {
-    let candidateRole = getPlayerRole(candidate.position)
-    if (!candidate.position) {
-      if (cIdx === 0) candidateRole = "G"
-      else if (cIdx <= 4) candidateRole = "D"
-      else if (cIdx <= 7) candidateRole = "M"
-      else candidateRole = "F"
+  const parsed = formationStr
+    .split(/[^0-9]+/)
+    .map((s) => parseInt(s, 10))
+    .filter((n) => !isNaN(n) && n > 0)
+
+  const sum = parsed.reduce((a, b) => a + b, 0)
+  // Formations typically specify 10 outfield players, e.g., 4-3-3 -> sum 10, 4-2-3-1 -> sum 10
+  if (parsed.length >= 2 && sum >= 8 && sum <= 10) {
+    return parsed
+  }
+  return [4, 3, 3]
+}
+
+export type FormattedPosition = {
+  left: string
+  top: string
+}
+
+export type LaidOutPlayer = {
+  player: MatchLineupPlayer
+  position: FormattedPosition
+  lineIndex: number
+  indexInLine: number
+  totalInLine: number
+}
+
+/**
+ * Calculates horizontal football pitch coordinates matching the team's tactical formation.
+ * - Home team defends Left (X=7%) and attacks Right (X=44.5%)
+ * - Away team defends Right (X=93%) and attacks Left (X=55.5%)
+ * - Symmetrical horizontal depth across formation lines (1 GK + N outfield lines)
+ * - Symmetrical vertical spacing along each line centered around 50%
+ * - Enforces Rule 2: max 11 players; if red card, player is dismissed and team has 10 players
+ */
+export function layoutFormation(
+  starters: MatchLineupPlayer[],
+  formationStr: string | null | undefined,
+  side: "home" | "away",
+  redCardedPlayerIds: Set<number> = new Set()
+): LaidOutPlayer[] {
+  // 1. Max 11 starters
+  const teamStarters = starters.slice(0, 11)
+
+  // 2. Identify Goalkeeper and Outfield players
+  let gk: MatchLineupPlayer | undefined
+  const outfieldPlayers: MatchLineupPlayer[] = []
+
+  for (const player of teamStarters) {
+    const role = getPlayerRole(player.position)
+    if (role === "G" && !gk) {
+      gk = player
+    } else {
+      outfieldPlayers.push(player)
     }
-    return candidateRole === role
+  }
+
+  // If no player had role 'G', take the first starter as goalkeeper
+  if (!gk && teamStarters.length > 0) {
+    gk = outfieldPlayers.shift()
+  }
+
+  // 3. Sort outfield players tactically (Defenders -> Midfielders -> Forwards)
+  const rolePriority = (pos: string | null | undefined) => {
+    const r = getPlayerRole(pos)
+    if (r === "D") return 1
+    if (r === "M") return 2
+    if (r === "F") return 3
+    return 2
+  }
+
+  outfieldPlayers.sort((a, b) => {
+    const pa = rolePriority(a.position)
+    const pb = rolePriority(b.position)
+    if (pa !== pb) return pa - pb
+    return 0 // preserve stable order / jersey
   })
 
-  const rowIndex = Math.max(rolePlayers.indexOf(player), 0)
-  const countInRole = Math.max(rolePlayers.length, 1)
+  // 4. Parse formation lines (e.g. "4-2-3-1" -> [4, 2, 3, 1])
+  const outfieldCounts = parseFormationLines(formationStr)
 
-  // Y-axis: Symmetrical vertical distribution across pitch width (8% to 92%)
-  // Spreads flank players out to wings (18.5% and 81.5% for 4-man line) with 100px+ between centers
-  const top = 8 + ((rowIndex + 0.5) / countInRole) * 84
+  // 5. Partition starters into tactical lines:
+  // Line 0: [GK]
+  // Line 1: [D, D, D, D]
+  // Line 2: [M, M]
+  // ...
+  const lines: MatchLineupPlayer[][] = []
+  lines.push(gk ? [gk] : [])
 
-  // X-axis: Horizontal depth along length of pitch
-  // Home team on Left (7% -> 44%), Away team on Right (93% -> 56%)
-  const homeDepth =
-    role === "G"
-      ? 7.0
-      : role === "D"
-      ? 20.0
-      : role === "M"
-      ? 33.0
-      : 44.0
-
-  const left = side === "home" ? homeDepth : 100 - homeDepth
-
-  return {
-    left: `${left}%`,
-    top: `${top}%`,
+  let outfieldCursor = 0
+  for (const count of outfieldCounts) {
+    const lineSlice = outfieldPlayers.slice(outfieldCursor, outfieldCursor + count)
+    outfieldCursor += count
+    lines.push(lineSlice)
   }
+
+  // If any outfield players remain, push to the last line
+  if (outfieldCursor < outfieldPlayers.length) {
+    lines[lines.length - 1].push(...outfieldPlayers.slice(outfieldCursor))
+  }
+
+  // 6. Apply Red Card Dismissals (Rule 2: out of match, team has 10 players)
+  // Filter dismissed players from their respective lines so that line naturally reflects the missing player
+  const activeLines = lines.map((line) =>
+    line.filter((player) => !player.redCards && !redCardedPlayerIds.has(player.id))
+  )
+
+  // 7. Calculate Coordinates (left% and top%)
+  // Depth (X): minX = 7.0% (GK), maxX = 44.5% (Strikers)
+  // Height (Y): topMin = 9.0%, topMax = 91.0% (vertical pitch height = 82%)
+  const totalLines = lines.length
+  const minX = 7.0
+  const maxX = 44.5
+  const xStep = totalLines > 1 ? (maxX - minX) / (totalLines - 1) : 0
+
+  const topMin = 9.0
+  const topMax = 91.0
+  const topSpan = topMax - topMin
+
+  const laidOut: LaidOutPlayer[] = []
+
+  for (let lineIndex = 0; lineIndex < activeLines.length; lineIndex++) {
+    const line = activeLines[lineIndex]
+    const totalInLine = line.length
+    if (totalInLine === 0) continue
+
+    const homeX = minX + lineIndex * xStep
+    const leftPercent = side === "home" ? homeX : 100 - homeX
+
+    for (let indexInLine = 0; indexInLine < totalInLine; indexInLine++) {
+      const player = line[indexInLine]
+      const topPercent = topMin + ((indexInLine + 0.5) / totalInLine) * topSpan
+
+      laidOut.push({
+        player,
+        position: {
+          left: `${leftPercent.toFixed(2)}%`,
+          top: `${topPercent.toFixed(2)}%`,
+        },
+        lineIndex,
+        indexInLine,
+        totalInLine,
+      })
+    }
+  }
+
+  return laidOut
 }
 
 function PlayerMarker({
   player,
-  players,
-  index,
-  side,
+  position,
   substitution,
 }: {
   player: MatchLineupPlayer
-  players: MatchLineupPlayer[]
-  index: number
-  side: "home" | "away"
+  position: FormattedPosition
   substitution?: SubstitutionInfo
 }) {
-  const position = playerPosition(player, index, players, side)
-
   return (
     <div
       className="absolute z-10 -translate-x-1/2 -translate-y-1/2 text-center group cursor-pointer transition-transform hover:z-20"
@@ -192,10 +284,21 @@ function PlayerMarker({
   )
 }
 
-function Bench({ lineup, events, side }: { lineup: MatchLineup; events: MatchEvent[]; side: "home" | "away" }) {
+function Bench({
+  lineup,
+  events,
+  side,
+  sentOffPlayers = [],
+}: {
+  lineup: MatchLineup
+  events: MatchEvent[]
+  side: "home" | "away"
+  sentOffPlayers?: MatchLineupPlayer[]
+}) {
   const substitutions = substitutionMap(events)
   const hasInjured = lineup.unavailable && lineup.unavailable.length > 0
   const hasSubstitutes = lineup.substitutes && lineup.substitutes.length > 0
+  const hasSentOff = sentOffPlayers.length > 0
 
   return (
     <div className="space-y-4">
@@ -332,6 +435,50 @@ function Bench({ lineup, events, side }: { lineup: MatchLineup; events: MatchEve
           </div>
         </div>
       )}
+
+      {/* Sent Off (Red Card) */}
+      {hasSentOff && (
+        <div>
+          <div className="mt-2 text-xs font-semibold uppercase text-red-600 border-b border-red-200 pb-1 mb-2 flex items-center gap-1.5">
+            <span>🟥</span> Sent Off (Red Card)
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {sentOffPlayers.map((player, index) => (
+              <div
+                key={`${lineup.team.id || lineup.team.name || "team"}-sentoff-${player.id || player.name || "player"}-${index}`}
+                className="flex items-center gap-2 rounded-md border border-red-200 bg-red-50/70 px-2 py-2"
+              >
+                <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-red-100 border border-red-300">
+                  {player.photo ? (
+                    <Image src={player.photo} alt={player.name} fill sizes="32px" className="object-cover grayscale" />
+                  ) : (
+                    <span className="flex h-full items-center justify-center text-[10px] font-bold text-red-700">
+                      {player.number ? player.number : player.name.slice(0, 2).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-bold text-red-950">
+                    {player.id ? (
+                      <Link href={`/player/${player.id}`} className="hover:underline">
+                        {player.name}
+                      </Link>
+                    ) : (
+                      player.name
+                    )}
+                  </p>
+                  <p className="text-[10px] text-red-600 font-medium">
+                    Dismissed • Out of Match
+                  </p>
+                </div>
+                <span className="rounded bg-red-600 px-1.5 py-0.5 text-[9px] font-bold text-white shadow-xs">
+                  🟥 RED
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -366,9 +513,21 @@ export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; even
   }
 
   const hasSubstitutes = lineups.some((l) => (l.substitutes?.length ?? 0) > 0)
+  const redCardedPlayerIds = new Set<number>()
+  for (const e of events) {
+    if (e.eventtype === "Card" && e.cardtype === "Red" && e.playerid) {
+      redCardedPlayerIds.add(e.playerid)
+    }
+  }
+
+  const getSentOffPlayers = (lineup: MatchLineup) =>
+    (lineup.starters ?? []).filter((p) => p.redCards > 0 || redCardedPlayerIds.has(p.id))
+
+  const hasSentOffAny = lineups.some((l) => getSentOffPlayers(l).length > 0)
   const hasBenchOrStaff = lineups.some(
     (l) => (l.substitutes?.length ?? 0) > 0 || Boolean(l.coach?.name) || (l.unavailable?.length ?? 0) > 0
-  )
+  ) || hasSentOffAny
+
   const hasSubstitutions = events.some((e) => e.eventtype === "Substitution")
 
   const homeLineup = lineups[0]
@@ -399,54 +558,62 @@ export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; even
 
         {/* Team Matchup Headers (Home on Left, Away on Right) */}
         <div className="mb-4 grid grid-cols-2 gap-4 border-b pb-3 text-sm font-semibold">
-          {lineups.slice(0, 2).map((lineup, index) => (
-            <div
-              key={`team-label-${lineup.team.id || lineup.team.name || index}`}
-              className={`flex items-center gap-2.5 ${index === 1 ? "justify-end text-right" : ""}`}
-            >
-              {index === 0 && lineup.team.logo && (
-                <Image
-                  src={lineup.team.logo}
-                  alt=""
-                  width={28}
-                  height={28}
-                  className="h-7 w-7 object-contain shrink-0"
-                />
-              )}
-              <div className="flex flex-col">
-                <span className="text-sm font-bold flex items-center gap-1.5">
-                  {lineup.team.name}
-                  <span className="text-xs font-normal text-muted-foreground hidden sm:inline">
-                    ({index === 0 ? "Home • Attacking →" : "← Attacking • Away"})
+          {lineups.slice(0, 2).map((lineup, index) => {
+            const sentOff = getSentOffPlayers(lineup)
+            return (
+              <div
+                key={`team-label-${lineup.team.id || lineup.team.name || index}`}
+                className={`flex items-center gap-2.5 ${index === 1 ? "justify-end text-right" : ""}`}
+              >
+                {index === 0 && lineup.team.logo && (
+                  <Image
+                    src={lineup.team.logo}
+                    alt=""
+                    width={28}
+                    height={28}
+                    className="h-7 w-7 object-contain shrink-0"
+                  />
+                )}
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold flex items-center gap-1.5">
+                    {lineup.team.name}
+                    <span className="text-xs font-normal text-muted-foreground hidden sm:inline">
+                      ({index === 0 ? "Home • Attacking →" : "← Attacking • Away"})
+                    </span>
                   </span>
-                </span>
-                <span
-                  className={`text-xs font-medium text-muted-foreground flex flex-wrap items-center gap-1.5 ${
-                    index === 1 ? "justify-end text-right" : ""
-                  }`}
-                >
-                  <span>Formation: {lineup.formation ?? "4-3-3"}</span>
-                  {lineup.coach?.name && (
-                    <>
-                      <span className="hidden sm:inline">•</span>
-                      <span className="inline-flex items-center gap-1 font-semibold text-slate-800">
-                        👔 Mgr: {lineup.coach.name}
+                  <span
+                    className={`text-xs font-medium text-muted-foreground flex flex-wrap items-center gap-1.5 ${
+                      index === 1 ? "justify-end text-right" : ""
+                    }`}
+                  >
+                    <span>Formation: {lineup.formation ?? "4-3-3"}</span>
+                    {sentOff.length > 0 && (
+                      <span className="font-bold text-red-600">
+                        • 🟥 10 Players
                       </span>
-                    </>
-                  )}
-                </span>
+                    )}
+                    {lineup.coach?.name && (
+                      <>
+                        <span className="hidden sm:inline">•</span>
+                        <span className="inline-flex items-center gap-1 font-semibold text-slate-800">
+                          👔 Mgr: {lineup.coach.name}
+                        </span>
+                      </>
+                    )}
+                  </span>
+                </div>
+                {index === 1 && lineup.team.logo && (
+                  <Image
+                    src={lineup.team.logo}
+                    alt=""
+                    width={28}
+                    height={28}
+                    className="h-7 w-7 object-contain shrink-0"
+                  />
+                )}
               </div>
-              {index === 1 && lineup.team.logo && (
-                <Image
-                  src={lineup.team.logo}
-                  alt=""
-                  width={28}
-                  height={28}
-                  className="h-7 w-7 object-contain shrink-0"
-                />
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
 
         {/* Horizontal Football Pitch */}
@@ -517,17 +684,22 @@ export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; even
               <span>{awayLineup?.team.name ?? "Away"}</span>
             </div>
 
-            {/* ── Players Rendered Horizontally ── */}
+            {/* ── Players Rendered Horizontally According to Formation ── */}
             {lineups.slice(0, 2).map((lineup, lineupIndex) => {
               const side = lineupIndex === 0 ? "home" : "away"
               const substitutions = substitutionMap(events)
-              return lineup.starters.map((player, index) => (
+              const laidOutPlayers = layoutFormation(
+                lineup.starters ?? [],
+                lineup.formation,
+                side,
+                redCardedPlayerIds
+              )
+
+              return laidOutPlayers.map(({ player, position }, index) => (
                 <PlayerMarker
                   key={`${lineup.team.id || lineup.team.name || "team"}-starter-${player.id || player.name || "player"}-${index}`}
                   player={player}
-                  players={lineup.starters}
-                  index={index}
-                  side={side}
+                  position={position}
                   substitution={substitutions.get(player.id)}
                 />
               ))
@@ -549,6 +721,7 @@ export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; even
                 lineup={lineup}
                 events={events}
                 side={index === 0 ? "home" : "away"}
+                sentOffPlayers={getSentOffPlayers(lineup)}
               />
             ))}
           </div>

@@ -26,7 +26,8 @@ export async function initializeDatabase() {
     ALTER TABLE Lineup
       ADD COLUMN IF NOT EXISTS Formation VARCHAR(20),
       ADD COLUMN IF NOT EXISTS Position VARCHAR(10),
-      ADD COLUMN IF NOT EXISTS JerseyNumber INT;
+      ADD COLUMN IF NOT EXISTS JerseyNumber INT,
+      ADD COLUMN IF NOT EXISTS LineupOrder INT;
 
     ALTER TABLE Player
       ADD COLUMN IF NOT EXISTS Position VARCHAR(10),
