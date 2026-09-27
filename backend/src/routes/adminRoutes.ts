@@ -4,6 +4,15 @@ import { optionalAuth, requireAuth, requireRole } from "../middleware/auth";
 
 const router = Router();
 
+// In-memory cache for high-frequency admin endpoints to ensure sub-millisecond response times
+let cachedDistribution: { data: any; expiresAt: number } | null = null;
+let cachedBreakdown: { data: any; expiresAt: number } | null = null;
+
+export function invalidateAdminCache() {
+  cachedDistribution = null;
+  cachedBreakdown = null;
+}
+
 // ============================================================================
 // 1. GET /api/admin/player-rankings
 // Retrieves paginated & filtered player rankings based on performance ratings
@@ -16,85 +25,85 @@ router.get("/player-rankings", optionalAuth, async (req: Request, res: Response)
     const limit = Math.min(100, Math.max(1, parseInt(String(req.query.limit || 25), 10)));
     const offset = Math.max(0, parseInt(String(req.query.offset || 0), 10));
 
-    let whereClauses: string[] = ["p.OverallRating IS NOT NULL", "pss.MatchesPlayed > 0"];
+    let whereClauses: string[] = ["OverallRating IS NOT NULL", "MatchesPlayed > 0"];
     const params: any[] = [];
 
     if (position !== "ALL") {
       params.push(position);
-      whereClauses.push(`p.Position = $${params.length}`);
+      whereClauses.push(`(Position = $${params.length} OR Position ILIKE ($${params.length} || '%'))`);
     }
 
     if (search) {
       params.push(`%${search}%`);
-      whereClauses.push(`(p.Name ILIKE $${params.length} OR pss.TeamName ILIKE $${params.length})`);
+      whereClauses.push(`(Name ILIKE $${params.length} OR TeamName ILIKE $${params.length})`);
     }
 
     const whereSql = whereClauses.length > 0 ? `WHERE ${whereClauses.join(" AND ")}` : "";
 
     // Sort column mapping
-    let orderSql = "p.OverallRating DESC NULLS LAST, pss.TotalGoals DESC, p.PlayerID ASC";
+    let orderSql = "OverallRating DESC NULLS LAST, TotalGoals DESC, PlayerID ASC";
     if (sortBy === "goals") {
-      orderSql = "pss.TotalGoals DESC NULLS LAST, p.OverallRating DESC";
+      orderSql = "TotalGoals DESC NULLS LAST, OverallRating DESC";
     } else if (sortBy === "assists") {
-      orderSql = "pss.TotalAssists DESC NULLS LAST, p.OverallRating DESC";
+      orderSql = "TotalAssists DESC NULLS LAST, OverallRating DESC";
     } else if (sortBy === "tackles") {
-      orderSql = "pss.TotalTackles DESC NULLS LAST, p.OverallRating DESC";
+      orderSql = "TotalTackles DESC NULLS LAST, OverallRating DESC";
     } else if (sortBy === "saves") {
-      orderSql = "pss.TotalSaves DESC NULLS LAST, p.OverallRating DESC";
+      orderSql = "TotalSaves DESC NULLS LAST, OverallRating DESC";
     } else if (sortBy === "minutes") {
-      orderSql = "pss.TotalMinutes DESC NULLS LAST, p.OverallRating DESC";
+      orderSql = "TotalMinutes DESC NULLS LAST, OverallRating DESC";
     }
 
     // Count query
     const countRes = await pool.query(
       `
       SELECT COUNT(*)::int AS total
-      FROM Player p
-      JOIN PlayerSeasonStatsView pss ON p.PlayerID = pss.PlayerID
+      FROM (
+        SELECT PlayerID, PlayerName AS Name, Position, TeamName, OverallRating, MatchesPlayed
+        FROM PlayerSeasonStatsView
+      ) sub
       ${whereSql}
       `,
       params
     );
     const total = countRes.rows[0]?.total ?? 0;
 
-    // Data query with row_number() over overall rating to get true rank
+    // Data query with DENSE_RANK() over overall rating to get true rank
     const queryParams = [...params, limit, offset];
     const dataRes = await pool.query(
       `
       WITH RankedPlayers AS (
         SELECT
-          p.PlayerID,
-          p.Name,
-          p.Position,
-          p.Photo,
-          p.OverallRating,
-          pss.TeamID,
-          pss.TeamName,
-          pss.MatchesPlayed,
-          pss.TotalMinutes,
-          pss.TotalGoals,
-          pss.TotalAssists,
-          pss.TotalShots,
-          pss.TotalShotsOnTarget,
-          pss.TotalPasses,
-          pss.TotalKeyPasses,
-          pss.TotalTackles,
-          pss.TotalInterceptions,
-          pss.TotalClearances,
-          pss.TotalSaves,
-          pss.TotalCleanSheets,
-          pss.TotalYellowCards,
-          pss.TotalRedCards,
-          pss.TotalGoalsConceded,
-          pss.GoalsPer90,
-          pss.AssistsPer90,
-          DENSE_RANK() OVER (ORDER BY p.OverallRating DESC NULLS LAST) AS GlobalRank
-        FROM Player p
-        JOIN PlayerSeasonStatsView pss ON p.PlayerID = pss.PlayerID
-        WHERE p.OverallRating IS NOT NULL AND pss.MatchesPlayed > 0
+          PlayerID,
+          PlayerName AS Name,
+          Position,
+          Photo,
+          OverallRating,
+          TeamID,
+          TeamName,
+          MatchesPlayed,
+          TotalMinutes,
+          TotalGoals,
+          TotalAssists,
+          TotalShots,
+          TotalShotsOnTarget,
+          TotalPasses,
+          TotalKeyPasses,
+          TotalTackles,
+          TotalInterceptions,
+          TotalClearances,
+          TotalSaves,
+          TotalCleanSheets,
+          TotalYellowCards,
+          TotalRedCards,
+          TotalGoalsConceded,
+          GoalsPer90,
+          AssistsPer90,
+          DENSE_RANK() OVER (ORDER BY OverallRating DESC NULLS LAST) AS GlobalRank
+        FROM PlayerSeasonStatsView
       )
       SELECT *
-      FROM RankedPlayers pss
+      FROM RankedPlayers
       ${whereSql}
       ORDER BY ${orderSql}
       LIMIT $${queryParams.length - 1} OFFSET $${queryParams.length}
@@ -150,28 +159,34 @@ router.get("/player-rankings", optionalAuth, async (req: Request, res: Response)
 // ============================================================================
 router.get("/position-breakdown", optionalAuth, async (_req: Request, res: Response) => {
   try {
+    const now = Date.now();
+    if (cachedBreakdown && cachedBreakdown.expiresAt > now) {
+      return res.json(cachedBreakdown.data);
+    }
+
     const fetchTopByPosition = async (pos: string) => {
       const result = await pool.query(
         `
         SELECT
-          p.PlayerID,
-          p.Name,
-          p.Position,
-          p.Photo,
-          p.OverallRating,
-          pss.TeamName,
-          pss.MatchesPlayed,
-          pss.TotalMinutes,
-          pss.TotalGoals,
-          pss.TotalAssists,
-          pss.TotalTackles,
-          pss.TotalSaves,
-          pss.TotalCleanSheets,
-          DENSE_RANK() OVER (ORDER BY p.OverallRating DESC) AS PosRank
-        FROM Player p
-        JOIN PlayerSeasonStatsView pss ON p.PlayerID = pss.PlayerID
-        WHERE p.Position = $1 AND p.OverallRating IS NOT NULL AND pss.MatchesPlayed > 0
-        ORDER BY p.OverallRating DESC, pss.TotalGoals DESC, p.PlayerID ASC
+          PlayerID,
+          PlayerName AS Name,
+          Position,
+          Photo,
+          OverallRating,
+          TeamName,
+          MatchesPlayed,
+          TotalMinutes,
+          TotalGoals,
+          TotalAssists,
+          TotalTackles,
+          TotalSaves,
+          TotalCleanSheets,
+          DENSE_RANK() OVER (ORDER BY OverallRating DESC) AS PosRank
+        FROM PlayerSeasonStatsView
+        WHERE (Position = $1 OR Position ILIKE ($1 || '%'))
+          AND OverallRating IS NOT NULL
+          AND MatchesPlayed > 0
+        ORDER BY OverallRating DESC, TotalGoals DESC, PlayerID ASC
         LIMIT 5
         `,
         [pos]
@@ -205,24 +220,28 @@ router.get("/position-breakdown", optionalAuth, async (_req: Request, res: Respo
     // Position aggregate metrics
     const statsRes = await pool.query(`
       SELECT
-        p.Position,
+        Position,
         COUNT(*)::int AS count,
-        ROUND(AVG(p.OverallRating), 2) AS avgRating,
-        MAX(p.OverallRating) AS maxRating,
-        MIN(p.OverallRating) AS minRating
-      FROM Player p
-      JOIN PlayerSeasonStatsView pss ON p.PlayerID = pss.PlayerID
-      WHERE p.OverallRating IS NOT NULL AND pss.MatchesPlayed > 0
-      GROUP BY p.Position
+        ROUND(AVG(OverallRating), 2) AS avgRating,
+        MAX(OverallRating) AS maxRating,
+        MIN(OverallRating) AS minRating
+      FROM PlayerSeasonStatsView
+      WHERE OverallRating IS NOT NULL AND MatchesPlayed > 0
+      GROUP BY Position
     `);
 
-    return res.json({
+    const responseData = {
       forwards,
       midfielders,
       defenders,
       goalkeepers,
       positionAverages: statsRes.rows,
-    });
+    };
+
+    // Cache for 30 seconds
+    cachedBreakdown = { data: responseData, expiresAt: now + 30000 };
+
+    return res.json(responseData);
   } catch (err) {
     console.error("GET /api/admin/position-breakdown error:", err);
     return res.status(500).json({ message: "Failed to fetch position breakdown" });
@@ -235,20 +254,24 @@ router.get("/position-breakdown", optionalAuth, async (_req: Request, res: Respo
 // ============================================================================
 router.get("/rating-distribution", optionalAuth, async (_req: Request, res: Response) => {
   try {
+    const now = Date.now();
+    if (cachedDistribution && cachedDistribution.expiresAt > now) {
+      return res.json(cachedDistribution.data);
+    }
+
     const result = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE p.OverallRating >= 8.50)::int AS elite,
-        COUNT(*) FILTER (WHERE p.OverallRating >= 7.50 AND p.OverallRating < 8.50)::int AS outstanding,
-        COUNT(*) FILTER (WHERE p.OverallRating >= 6.50 AND p.OverallRating < 7.50)::int AS good,
-        COUNT(*) FILTER (WHERE p.OverallRating >= 5.50 AND p.OverallRating < 6.50)::int AS average,
-        COUNT(*) FILTER (WHERE p.OverallRating < 5.50)::int AS developing,
+        COUNT(*) FILTER (WHERE OverallRating >= 8.50)::int AS elite,
+        COUNT(*) FILTER (WHERE OverallRating >= 7.50 AND OverallRating < 8.50)::int AS outstanding,
+        COUNT(*) FILTER (WHERE OverallRating >= 6.50 AND OverallRating < 7.50)::int AS good,
+        COUNT(*) FILTER (WHERE OverallRating >= 5.50 AND OverallRating < 6.50)::int AS average,
+        COUNT(*) FILTER (WHERE OverallRating < 5.50)::int AS developing,
         COUNT(*)::int AS total,
-        ROUND(AVG(p.OverallRating), 2) AS avgRating,
-        MAX(p.OverallRating) AS maxRating,
-        MIN(p.OverallRating) AS minRating
-      FROM Player p
-      JOIN PlayerSeasonStatsView pss ON p.PlayerID = pss.PlayerID
-      WHERE p.OverallRating IS NOT NULL AND pss.MatchesPlayed > 0
+        ROUND(AVG(OverallRating), 2) AS avgRating,
+        MAX(OverallRating) AS maxRating,
+        MIN(OverallRating) AS minRating
+      FROM PlayerSeasonStatsView
+      WHERE OverallRating IS NOT NULL AND MatchesPlayed > 0
     `);
 
     const row = result.rows[0] ?? {
@@ -310,11 +333,10 @@ router.get("/rating-distribution", optionalAuth, async (_req: Request, res: Resp
 
     // Get top rated player overall
     const topPlayerRes = await pool.query(`
-      SELECT p.PlayerID, p.Name, p.Position, p.OverallRating, pss.TeamName
-      FROM Player p
-      JOIN PlayerSeasonStatsView pss ON p.PlayerID = pss.PlayerID
-      WHERE p.OverallRating IS NOT NULL AND pss.MatchesPlayed > 0
-      ORDER BY p.OverallRating DESC
+      SELECT PlayerID, PlayerName AS Name, Position, OverallRating, TeamName
+      FROM PlayerSeasonStatsView
+      WHERE OverallRating IS NOT NULL AND MatchesPlayed > 0
+      ORDER BY OverallRating DESC
       LIMIT 1
     `);
 
@@ -328,14 +350,19 @@ router.get("/rating-distribution", optionalAuth, async (_req: Request, res: Resp
         }
       : null;
 
-    return res.json({
+    const responseData = {
       tiers,
       totalPlayers: Number(row.total),
       averageRating: Number(row.avgrating) || 0,
       highestRating: Number(row.maxrating) || 0,
       lowestRating: Number(row.minrating) || 0,
       topPlayer,
-    });
+    };
+
+    // Cache for 30 seconds
+    cachedDistribution = { data: responseData, expiresAt: now + 30000 };
+
+    return res.json(responseData);
   } catch (err) {
     console.error("GET /api/admin/rating-distribution error:", err);
     return res.status(500).json({ message: "Failed to fetch rating distribution" });
@@ -351,6 +378,9 @@ router.post("/recalculate-ratings", optionalAuth, async (_req: Request, res: Res
     const startTime = Date.now();
     await pool.query(`CALL update_all_player_ratings('2025/2026')`);
     const durationMs = Date.now() - startTime;
+
+    // Invalidate in-memory caches so fresh numbers are immediately reflected
+    invalidateAdminCache();
 
     const countRes = await pool.query(
       `SELECT COUNT(*)::int AS count FROM Player WHERE OverallRating IS NOT NULL`

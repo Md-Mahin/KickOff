@@ -647,45 +647,88 @@ const FALLBACK = [
   { fixture: { id: 993, status: { short: "FT", elapsed: 90 } }, league: { id: 7, name: "Premier League", country: "England" }, teams: { home: { id: 5, name: "Manchester City", logo: null }, away: { id: 6, name: "Liverpool", logo: null } }, goals: { home: 2, away: 1 } },
 ];
 
+// ── High performance memory caches ─────────────────────────────────────────────
+let cachedFixtures: { data: any; expiresAt: number } | null = null;
+let cachedPopular: { data: any; expiresAt: number } | null = null;
+let lastApiSyncTime = 0;
+
 const todayStr = () => new Date().toISOString().split("T")[0];
+
+/** Trigger non-blocking background sync from API-Football once every 15 minutes */
+function triggerBackgroundSync() {
+  const now = Date.now();
+  if (now - lastApiSyncTime < 15 * 60 * 1000) return; // Sync at most once every 15 mins
+  lastApiSyncTime = now;
+
+  // Run in background without blocking the HTTP response
+  setTimeout(async () => {
+    try {
+      const rawItems = await apiFetch(`/fixtures?date=${todayStr()}`);
+      if (Array.isArray(rawItems) && rawItems.length > 0) {
+        for (const item of rawItems) {
+          syncFixtureToDb(item).catch(() => {});
+        }
+      }
+    } catch {}
+  }, 100);
+}
 
 // ── Public service functions ──────────────────────────────────────────────────
 
 export async function getFixtures() {
-  // 1. Fetch fresh fixtures from API-Football and sync into DB
+  const now = Date.now();
+  if (cachedFixtures && cachedFixtures.expiresAt > now) {
+    return cachedFixtures.data;
+  }
+
+  // 1. Read from PostgreSQL DB first for instant response
+  try {
+    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC`);
+    if (rows.length > 0) {
+      const result = { response: sortByLeague(rows.map(mapDbRow)) };
+      cachedFixtures = { data: result, expiresAt: now + 15000 }; // 15s cache
+      triggerBackgroundSync();
+      return result;
+    }
+  } catch (e) {
+    console.warn("DB getFixtures query:", (e as Error).message);
+  }
+
+  // 2. Fallback to API sync only if DB was completely empty
   try {
     const rawItems = await apiFetch(`/fixtures?date=${todayStr()}`);
     if (Array.isArray(rawItems) && rawItems.length > 0) {
-      console.log(`Syncing ${rawItems.length} fixtures from API into DB...`);
       for (const item of rawItems) {
-        syncFixtureToDb(item).catch(() => { });
+        await syncFixtureToDb(item).catch(() => {});
+      }
+      const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC`);
+      if (rows.length > 0) {
+        const result = { response: sortByLeague(rows.map(mapDbRow)) };
+        cachedFixtures = { data: result, expiresAt: now + 15000 };
+        return result;
       }
     }
   } catch (e) {
     console.warn("API getFixtures fetch/sync:", (e as Error).message);
   }
 
-  // 2. Read all fixtures from PostgreSQL DB!
-  try {
-    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC`);
-    if (rows.length > 0) {
-      return { response: sortByLeague(rows.map(mapDbRow)) };
-    }
-  } catch (e) {
-    console.warn("DB getFixtures query:", (e as Error).message);
-  }
-
   // 3. Hardcoded fallback
-  console.warn("Using hardcoded fallback fixtures");
   return { response: FALLBACK };
 }
 
 /** Top matches sorted by league tier (biggest leagues first). */
 export async function getPopularFixtures() {
+  const now = Date.now();
+  if (cachedPopular && cachedPopular.expiresAt > now) {
+    return cachedPopular.data;
+  }
+
   try {
     const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC LIMIT 12`);
     if (rows.length > 0) {
-      return { response: sortByLeague(rows.map(mapDbRow)) };
+      const result = { response: sortByLeague(rows.map(mapDbRow)) };
+      cachedPopular = { data: result, expiresAt: now + 15000 };
+      return result;
     }
   } catch (e) {
     console.warn("DB getPopularFixtures query:", (e as Error).message);

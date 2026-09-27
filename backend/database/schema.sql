@@ -312,6 +312,12 @@ CREATE INDEX idx_comment_parent       ON Comment(ParentCommentID);
 
 CREATE INDEX idx_follows_team_team    ON UserFollowsTeam(TeamID);
 CREATE INDEX idx_follows_player_pl    ON UserFollowsPlayer(PlayerID);
+CREATE INDEX idx_player_rating        ON Player(OverallRating DESC NULLS LAST);
+CREATE INDEX idx_player_position      ON Player(Position);
+CREATE INDEX idx_lineup_match_team    ON Lineup(MatchID, TeamID);
+CREATE INDEX idx_lineup_player_match  ON Lineup(PlayerID, MatchID DESC);
+CREATE INDEX idx_match_date_desc      ON Match(MatchDate DESC);
+CREATE INDEX idx_match_home_away      ON Match(HomeTeamID, AwayTeamID);
 
 CREATE OR REPLACE FUNCTION check_lineup_team_in_match() RETURNS TRIGGER AS $$
 BEGIN
