@@ -68,6 +68,15 @@ export async function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_notification_user ON Notification(UserID, IsRead);
     CREATE INDEX IF NOT EXISTS idx_notification_match ON Notification(MatchID);
+
+    CREATE TABLE IF NOT EXISTS UserFollowsTournament (
+      UserID INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
+      TournamentID INT NOT NULL REFERENCES Tournament(TournamentID) ON DELETE CASCADE,
+      PRIMARY KEY (UserID, TournamentID)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_follows_tournament ON UserFollowsTournament(UserID);
+    CREATE INDEX IF NOT EXISTS idx_tournament_follows ON UserFollowsTournament(TournamentID);
   `);
 
   await pool.query(`

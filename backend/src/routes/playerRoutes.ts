@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { pool } from "../db";
+import { optionalAuth } from "../middleware/auth";
 
 const router = Router();
 
 // GET /api/players/:id
-router.get("/:id", async (req, res) => {
+router.get("/:id", optionalAuth, async (req, res) => {
   try {
     const playerId = Number(req.params.id);
 
@@ -26,19 +27,30 @@ router.get("/:id", async (req, res) => {
     }
 
     const playerRow = playerResult.rows[0];
+
+    // 2. Followers & Following status
+    const followersResult = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM UserFollowsPlayer WHERE PlayerID = $1`,
+      [playerId]
+    );
+    const followers = followersResult.rows[0]?.count ?? 0;
+
+    let isFollowing = false;
+    if (req.auth?.userId) {
+      const followCheck = await pool.query(
+        `SELECT 1 FROM UserFollowsPlayer WHERE UserID = $1 AND PlayerID = $2`,
+        [req.auth.userId, playerId]
+      );
+      isFollowing = (followCheck.rowCount ?? 0) > 0;
+    }
+
     const player = {
       id: playerRow.playerid,
       name: playerRow.name,
       dateOfBirth: playerRow.dateofbirth,
       nationality: playerRow.nationality,
+      isFollowing,
     };
-
-    // 2. Followers
-    const followersResult = await pool.query(
-      `SELECT COUNT(*) FROM UserFollowsPlayer WHERE PlayerID = $1`,
-      [playerId]
-    );
-    const followers = Number(followersResult.rows[0].count);
 
     // 3. Current Club
     const clubResult = await pool.query(
@@ -167,6 +179,7 @@ router.get("/:id", async (req, res) => {
     res.json({
       player,
       followers,
+      isFollowing,
       club,
       matches: finalMatches,
       stats,

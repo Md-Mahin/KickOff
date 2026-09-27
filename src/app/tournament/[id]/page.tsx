@@ -5,6 +5,7 @@ import { Star, ChevronDown } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
+import FollowButton, { FollowersCountBadge } from "@/components/ui/follow-button"
 import { getTournamentProfile } from "@/lib/api"
 import type { TeamMatch, TournamentProfile } from "@/lib/matches"
 
@@ -222,9 +223,13 @@ export default async function TournamentProfilePage({
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-slate-900 flex items-center gap-3">
                   {tournament.name}
-                  <span className="text-sm font-normal text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full flex items-center gap-1">
-                    👥 {(followers / 1000000).toFixed(1)}M
-                  </span>
+                  <FollowersCountBadge
+                    targetType="tournament"
+                    targetId={tournamentId}
+                    initialCount={followers}
+                    formatCompact={true}
+                    className="text-sm font-normal text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full flex items-center gap-1"
+                  />
                 </h1>
                 <div className="mt-2 flex items-center gap-3 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
@@ -238,9 +243,13 @@ export default async function TournamentProfilePage({
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <Button variant="default" className="font-semibold px-6 shadow-sm">
-                <Star className="mr-2 h-4 w-4" /> FAVOURITE
-              </Button>
+              <FollowButton
+                targetType="tournament"
+                targetId={tournamentId}
+                initialIsFollowing={tournament.isFollowing ?? data.isFollowing}
+                initialFollowersCount={followers}
+                size="lg"
+              />
             </div>
           </div>
           

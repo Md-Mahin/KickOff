@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "seed": "tsx src/db/seed.ts",
+    "seed:users": "tsx scripts/seed100Users.ts",
     "sync-api": "tsx scripts/syncApiFootball.ts",
     "sync-events": "tsx scripts/syncEvents.ts"
   },

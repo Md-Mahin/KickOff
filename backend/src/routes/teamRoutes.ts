@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { pool } from "../db";
+import { optionalAuth } from "../middleware/auth";
 
 const router = Router();
 
 // GET /api/teams/:id
-router.get("/:id", async (req, res) => {
+router.get("/:id", optionalAuth, async (req, res) => {
   try {
     const teamId = Number(req.params.id);
 
@@ -39,6 +40,15 @@ router.get("/:id", async (req, res) => {
     );
     const followers = followersResult.rows[0]?.count ?? 0;
 
+    let isFollowing = false;
+    if (req.auth?.userId) {
+      const followCheck = await pool.query(
+        `SELECT 1 FROM UserFollowsTeam WHERE UserID = $1 AND TeamID = $2`,
+        [req.auth.userId, teamId]
+      );
+      isFollowing = (followCheck.rowCount ?? 0) > 0;
+    }
+
     const team = {
       id: teamRow.teamid,
       name: teamRow.name,
@@ -47,6 +57,7 @@ router.get("/:id", async (req, res) => {
       club: teamRow.clubname,
       federation: teamRow.federationname,
       followers,
+      isFollowing,
     };
 
     // 2. Home venue (most common venue where team plays as home)

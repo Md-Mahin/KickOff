@@ -426,3 +426,91 @@ export async function markAllNotificationsAsRead(): Promise<boolean> {
     return false
   }
 }
+
+export type FollowTargetType = "team" | "player" | "tournament"
+
+export async function followEntity(
+  type: FollowTargetType,
+  id: number
+): Promise<{ success: boolean; following: boolean; followersCount: number; unauthorized?: boolean }> {
+  try {
+    const pathType = type === "team" ? "teams" : type === "player" ? "players" : "tournaments"
+    const res = await fetch(`${API_URL}/api/users/${pathType}/${id}`, {
+      method: "POST",
+      credentials: "include",
+    })
+
+    if (res.status === 401) {
+      return { success: false, following: false, followersCount: 0, unauthorized: true }
+    }
+
+    if (!res.ok) {
+      return { success: false, following: false, followersCount: 0 }
+    }
+
+    const data = await res.json()
+    return {
+      success: true,
+      following: true,
+      followersCount: data.followersCount ?? 0,
+    }
+  } catch (error) {
+    console.error(`Failed to follow ${type}:`, error)
+    return { success: false, following: false, followersCount: 0 }
+  }
+}
+
+export async function unfollowEntity(
+  type: FollowTargetType,
+  id: number
+): Promise<{ success: boolean; following: boolean; followersCount: number; unauthorized?: boolean }> {
+  try {
+    const pathType = type === "team" ? "teams" : type === "player" ? "players" : "tournaments"
+    const res = await fetch(`${API_URL}/api/users/${pathType}/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+    })
+
+    if (res.status === 401) {
+      return { success: false, following: true, followersCount: 0, unauthorized: true }
+    }
+
+    if (!res.ok) {
+      return { success: false, following: true, followersCount: 0 }
+    }
+
+    const data = await res.json().catch(() => ({}))
+    return {
+      success: true,
+      following: false,
+      followersCount: data.followersCount ?? 0,
+    }
+  } catch (error) {
+    console.error(`Failed to unfollow ${type}:`, error)
+    return { success: false, following: true, followersCount: 0 }
+  }
+}
+
+export async function checkFollowStatus(
+  type: FollowTargetType,
+  id: number
+): Promise<{ following: boolean; authenticated: boolean }> {
+  try {
+    const res = await fetch(`${API_URL}/api/users/follows/check?type=${type}&id=${id}`, {
+      credentials: "include",
+    })
+
+    if (res.status === 401) {
+      return { following: false, authenticated: false }
+    }
+
+    if (!res.ok) {
+      return { following: false, authenticated: true }
+    }
+
+    const data = await res.json()
+    return { following: Boolean(data.following), authenticated: true }
+  } catch {
+    return { following: false, authenticated: false }
+  }
+}

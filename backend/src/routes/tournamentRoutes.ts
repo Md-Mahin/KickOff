@@ -1,9 +1,10 @@
 import express from "express";
 import { pool } from "../db";
+import { optionalAuth } from "../middleware/auth";
 
 const router = express.Router();
 
-router.get("/:id", async (req, res) => {
+router.get("/:id", optionalAuth, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) {
@@ -32,8 +33,21 @@ router.get("/:id", async (req, res) => {
       country: "Europe", // Mock region/country
     };
 
-    // 2. Followers (mocking deterministic based on ID)
-    const followers = 100000 + (id * 50000);
+    // 2. Followers & Following status
+    const followersRes = await pool.query(
+      `SELECT COUNT(*)::int AS count FROM UserFollowsTournament WHERE TournamentID = $1`,
+      [id]
+    );
+    const followers = followersRes.rows[0]?.count ?? 0;
+
+    let isFollowing = false;
+    if (req.auth?.userId) {
+      const followCheck = await pool.query(
+        `SELECT 1 FROM UserFollowsTournament WHERE UserID = $1 AND TournamentID = $2`,
+        [req.auth.userId, id]
+      );
+      isFollowing = (followCheck.rowCount ?? 0) > 0;
+    }
 
     // 3. Matches
     // Fetch some matches for this tournament
@@ -112,8 +126,12 @@ router.get("/:id", async (req, res) => {
     }));
 
     res.json({
-      tournament: tournamentInfo,
+      tournament: {
+        ...tournamentInfo,
+        isFollowing,
+      },
       followers,
+      isFollowing,
       matches,
       standings
     });

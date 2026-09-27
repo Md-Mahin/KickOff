@@ -177,6 +177,12 @@ CREATE TABLE UserFollowsPlayer (
     PRIMARY KEY (UserID, PlayerID)
 );
 
+CREATE TABLE UserFollowsTournament (
+    UserID        INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
+    TournamentID  INT NOT NULL REFERENCES Tournament(TournamentID) ON DELETE CASCADE,
+    PRIMARY KEY (UserID, TournamentID)
+);
+
 CREATE TABLE News (
     NewsID        SERIAL PRIMARY KEY,
     Title         VARCHAR(250) NOT NULL,

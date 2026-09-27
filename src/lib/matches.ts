@@ -78,6 +78,7 @@ export type TeamInfo = {
   club: string | null
   federation: string | null
   followers?: number
+  isFollowing?: boolean
 }
 
 export type TeamVenue = {
@@ -150,6 +151,7 @@ export type PlayerInfo = {
   name: string
   dateOfBirth: string | null
   nationality: string | null
+  isFollowing?: boolean
 }
 
 export type PlayerClubInfo = {
@@ -168,6 +170,7 @@ export type PlayerStats = {
 export type PlayerProfile = {
   player: PlayerInfo
   followers: number
+  isFollowing?: boolean
   club: PlayerClubInfo | null
   matches: TeamMatch[]
   stats: PlayerStats
@@ -182,6 +185,7 @@ export type TournamentInfo = {
   edition: string | null
   logo: string | null
   country: string | null
+  isFollowing?: boolean
 }
 
 export type TournamentStandingRow = {
@@ -203,6 +207,7 @@ export type TournamentStandingRow = {
 export type TournamentProfile = {
   tournament: TournamentInfo
   followers: number
+  isFollowing?: boolean
   matches: TeamMatch[]
   standings: TournamentStandingRow[]
 }
