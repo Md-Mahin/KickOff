@@ -90,14 +90,16 @@ export default function Navbar() {
                   Dashboard
                 </Link>
 
-                {isAdmin && (
-                  <Link
-                    href="/admin"
-                    className="rounded-md px-3 py-2 text-sm font-medium text-amber-300 hover:bg-white/10 hover:text-white flex items-center gap-1.5 transition-colors"
-                  >
-                    <span>⚡</span> Admin Ratings
-                  </Link>
-                )}
+                <Link
+                  href="/admin"
+                  className={`rounded-md px-3 py-2 text-sm font-medium flex items-center gap-1.5 transition-colors ${
+                    isAdmin
+                      ? "text-amber-300 hover:bg-white/10 hover:text-white"
+                      : "text-gray-300 hover:bg-white/10 hover:text-white"
+                  }`}
+                >
+                  <span>⚡</span> Admin Ratings
+                </Link>
 
               </div>
             </div>
@@ -133,14 +135,12 @@ export default function Navbar() {
             Dashboard
           </Link>
 
-          {isAdmin && (
-            <Link
-              href="/admin"
-              className="block rounded-md px-3 py-2 text-base font-medium text-amber-300 hover:bg-white/10"
-            >
-              Admin Ratings
-            </Link>
-          )}
+          <Link
+            href="/admin"
+            className="block rounded-md px-3 py-2 text-base font-medium text-amber-300 hover:bg-white/10"
+          >
+            ⚡ Admin Ratings
+          </Link>
 
         </div>
       </div>

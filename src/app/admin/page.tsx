@@ -12,28 +12,64 @@ type AdminUser = { id: number; name: string; email: string; role: string }
 export default function AdminPage() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [isSigningIn, setIsSigningIn] = useState(false)
+  const [loginError, setLoginError] = useState("")
   const [activeTab, setActiveTab] = useState<"performance" | "users">("performance")
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([])
 
+  const checkAuth = async () => {
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/me", { credentials: "include" })
+      if (!res.ok) {
+        setUser(null)
+        return
+      }
+      const data = await res.json()
+      setUser(data.user ?? null)
+      if (data.user?.role === "admin") {
+        fetch("http://localhost:5000/api/users/admin/users", { credentials: "include" })
+          .then((r) => r.json())
+          .then((uData) => setAdminUsers(uData.users ?? []))
+          .catch(() => {})
+      }
+    } catch {
+      setUser(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    fetch("http://localhost:5000/api/auth/me", { credentials: "include" })
-      .then(async (res) => {
-        if (!res.ok) {
-          setUser(null)
-          return
-        }
-        const data = await res.json()
-        setUser(data.user ?? null)
-        if (data.user?.role === "admin") {
-          fetch("http://localhost:5000/api/users/admin/users", { credentials: "include" })
-            .then((r) => r.json())
-            .then((uData) => setAdminUsers(uData.users ?? []))
-            .catch(() => {})
-        }
-      })
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false))
+    checkAuth()
   }, [])
+
+  // 1-Click Demo Admin Login
+  const handleQuickAdminLogin = async () => {
+    setIsSigningIn(true)
+    setLoginError("")
+    try {
+      const res = await fetch("http://localhost:5000/api/auth/login", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "admin@kickoff.com",
+          password: "AdminPassword123!",
+        }),
+      })
+
+      if (res.ok) {
+        window.location.reload()
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        setLoginError(errData.message || "Failed to sign in as admin. Check that backend is running.")
+      }
+    } catch {
+      setLoginError("Could not connect to backend server. Make sure it is running on port 5000.")
+    } finally {
+      setIsSigningIn(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -51,21 +87,56 @@ export default function AdminPage() {
       <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
         <Card className="max-w-md w-full border-slate-200 shadow-sm text-center">
           <CardHeader>
-            <div className="mx-auto h-12 w-12 rounded-full bg-rose-100 flex items-center justify-center text-xl mb-2">
-              🔒
+            <div className="mx-auto h-12 w-12 rounded-full bg-amber-100 flex items-center justify-center text-xl mb-2 text-amber-700">
+              ⚡
             </div>
             <CardTitle className="text-lg font-bold text-slate-900">Administrator Access Required</CardTitle>
             <CardDescription className="text-xs text-slate-500">
-              This portal is restricted to authorized administrators. Please sign in with an administrator account to view performance statistics.
+              This portal displays performance ratings and statistics. Sign in with an administrator account to continue.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
-            <Link href="/sign-in" className="block">
-              <Button className="w-full">Sign In with Admin Account</Button>
-            </Link>
-            <Link href="/" className="block">
-              <Button variant="outline" className="w-full">Return to KickOff Home</Button>
-            </Link>
+          <CardContent className="space-y-4">
+            {loginError && (
+              <p className="rounded-lg border border-destructive/20 bg-destructive/10 p-2.5 text-xs text-destructive text-left">
+                {loginError}
+              </p>
+            )}
+
+            {/* 1-Click Quick Demo Login */}
+            <Button
+              type="button"
+              onClick={handleQuickAdminLogin}
+              disabled={isSigningIn}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-10 shadow-sm transition-all"
+            >
+              {isSigningIn ? (
+                <span className="flex items-center gap-2">
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  Signing In as Admin...
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <span>⚡</span> 1-Click Sign In as Admin
+                </span>
+              )}
+            </Button>
+
+            <div className="rounded-lg bg-slate-100 p-3 text-left border border-slate-200 space-y-1">
+              <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Default Admin Credentials:</p>
+              <div className="text-xs font-mono text-slate-800 space-y-0.5">
+                <p>Email: <span className="font-semibold text-blue-600">admin@kickoff.com</span></p>
+                <p>Password: <span className="font-semibold text-slate-900">AdminPassword123!</span></p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <Link href="/sign-in" className="flex-1">
+                <Button variant="outline" size="sm" className="w-full text-xs">Custom Sign In</Button>
+              </Link>
+              <Link href="/" className="flex-1">
+                <Button variant="ghost" size="sm" className="w-full text-xs">Return Home</Button>
+              </Link>
+            </div>
           </CardContent>
         </Card>
       </div>

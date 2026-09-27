@@ -484,8 +484,38 @@ export async function initializeDatabase() {
         console.log("Successfully populated 18 matches, squads, and standings!");
       }
     }
+
+    // Auto-provision admin accounts if missing (ensures teammates get working admin logins immediately)
+    const adminCheck = await pool.query(`SELECT 1 FROM Users WHERE Role = 'admin' LIMIT 1`);
+    if (adminCheck.rows.length === 0) {
+      console.log("No administrator user found. Auto-creating default admin accounts...");
+      const bcrypt = require("bcrypt");
+      const hash = await bcrypt.hash("AdminPassword123!", 10);
+      await pool.query(
+        `INSERT INTO Users (Username, Email, PasswordHash, Role)
+         VALUES ($1, $2, $3, 'admin')
+         ON CONFLICT (Email) DO UPDATE SET Role = 'admin', PasswordHash = $3`,
+        ["KickOff Admin", "admin@kickoff.com", hash]
+      );
+      await pool.query(
+        `INSERT INTO Users (Username, Email, PasswordHash, Role)
+         VALUES ($1, $2, $3, 'admin')
+         ON CONFLICT (Email) DO UPDATE SET Role = 'admin', PasswordHash = $3`,
+        ["System Admin", "admin2@kickoff.com", hash]
+      );
+      console.log("Admin accounts ready: admin@kickoff.com / admin2@kickoff.com (password: AdminPassword123!)");
+    }
+
+    // Auto-provision player match stats and compute ratings if empty
+    const statsCheck = await pool.query(`SELECT COUNT(*) FROM PlayerMatchStat`);
+    if (parseInt(statsCheck.rows[0].count, 10) === 0) {
+      console.log("PlayerMatchStat table is empty. Generating match statistics & calculating initial ratings...");
+      const { autoSeedPlayerMatchStats } = require("./autoSeedStats");
+      await autoSeedPlayerMatchStats(pool);
+      console.log("Player match stats and performance ratings generated successfully!");
+    }
   } catch (err) {
-    console.warn("Auto-seed check warning:", (err as Error).message);
+    console.warn("Auto-provision check warning:", (err as Error).message);
   }
 }
 
