@@ -1,3 +1,4 @@
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -65,3 +66,4 @@ initializeDatabase()
       console.log(`KickOff backend running on http://localhost:${PORT}`);
     });
   });
+

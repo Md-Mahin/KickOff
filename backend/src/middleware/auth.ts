@@ -1,3 +1,4 @@
+
 import { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 
@@ -102,3 +103,4 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
 
   return next();
 }
+

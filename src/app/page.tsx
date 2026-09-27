@@ -31,7 +31,7 @@ function MatchRow({ match }: { match: Match }) {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {match.homeLogo ? (
-              <Image src={match.homeLogo} alt={match.homeTeam} width={24} height={24} className="object-contain" />
+              <Image src={match.homeLogo} alt={match.homeTeam} width={24} height={24} className="h-6 w-6 object-contain" style={{ width: 'auto', height: 'auto' }} />
             ) : (
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
                 {match.homeTeam.substring(0, 2).toUpperCase()}
@@ -44,7 +44,7 @@ function MatchRow({ match }: { match: Match }) {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {match.awayLogo ? (
-              <Image src={match.awayLogo} alt={match.awayTeam} width={24} height={24} className="object-contain" />
+              <Image src={match.awayLogo} alt={match.awayTeam} width={24} height={24} className="h-6 w-6 object-contain" style={{ width: 'auto', height: 'auto' }} />
             ) : (
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
                 {match.awayTeam.substring(0, 2).toUpperCase()}
@@ -71,7 +71,7 @@ function FeaturedMatchCard({ match }: { match: MatchWithLeague }) {
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             {match.homeLogo ? (
-              <Image src={match.homeLogo} alt={match.homeTeam} width={18} height={18} className="object-contain shrink-0" />
+              <Image src={match.homeLogo} alt={match.homeTeam} width={18} height={18} className="object-contain shrink-0" style={{ width: 'auto', height: 'auto' }} />
             ) : (
               <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
                 {match.homeTeam.substring(0, 2).toUpperCase()}
@@ -84,7 +84,7 @@ function FeaturedMatchCard({ match }: { match: MatchWithLeague }) {
           </div>
           <div className="flex items-center gap-2">
             {match.awayLogo ? (
-              <Image src={match.awayLogo} alt={match.awayTeam} width={18} height={18} className="object-contain shrink-0" />
+              <Image src={match.awayLogo} alt={match.awayTeam} width={18} height={18} className="object-contain shrink-0" style={{ width: 'auto', height: 'auto' }} />
             ) : (
               <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
                 {match.awayTeam.substring(0, 2).toUpperCase()}

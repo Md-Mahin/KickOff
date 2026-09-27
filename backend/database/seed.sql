@@ -1,3 +1,4 @@
+
 -- Disable triggers and clear existing data
 DO $$ 
 BEGIN
@@ -415,3 +416,4 @@ SELECT setval(pg_get_serial_sequence('Venue', 'venueid'), COALESCE(MAX(VenueID),
 SELECT setval(pg_get_serial_sequence('Tournament', 'tournamentid'), COALESCE(MAX(TournamentID), 1)) FROM Tournament;
 SELECT setval(pg_get_serial_sequence('Referee', 'refereeid'), COALESCE(MAX(RefereeID), 1)) FROM Referee;
 SELECT setval(pg_get_serial_sequence('Event', 'eventid'), COALESCE(MAX(EventID), 1)) FROM Event;
+

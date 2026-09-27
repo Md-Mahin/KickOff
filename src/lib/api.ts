@@ -87,18 +87,18 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
     referees: fixture.referees,
     venue: (fixture.fixture?.venue?.name
       ? {
-          name: fixture.fixture.venue.name,
-          city: fixture.fixture.venue.city,
-          country: fixture.fixture.venue.country,
-        }
+        name: fixture.fixture.venue.name,
+        city: fixture.fixture.venue.city,
+        country: fixture.fixture.venue.country,
+      }
       : (fixture as any).venue?.name
-      ? {
+        ? {
           name: (fixture as any).venue.name,
           city: (fixture as any).venue.city,
           country: (fixture as any).venue.country,
         }
-      : undefined),
-    
+        : undefined),
+
     homeTeam: fixture.teams.home.name,
     awayTeam: fixture.teams.away.name,
 
@@ -115,7 +115,7 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
 
     minute:
       status === "LIVE" &&
-      fixture.fixture.status.elapsed !== null
+        fixture.fixture.status.elapsed !== null
         ? `${fixture.fixture.status.elapsed}'`
         : undefined,
 
@@ -125,39 +125,39 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
   }
 }
 
-  const TOP_LEAGUE_ORDER = [
-    "premier league",
-    "champions league",
-    "la liga",
-    "world cup",
-    "bundesliga",
-    "ligue 1",
-    "serie a",
-    "europa league",
-    "copa del rey",
-    "copa america",
-    "uefa euro",
-    "nations league",
-    "africa cup",
-    "asian cup",
-    "gold cup",
-    "concacaf",
-    "olympic",
-    "qualification",
-    "friendlies",
-  ]
+const TOP_LEAGUE_ORDER = [
+  "premier league",
+  "champions league",
+  "la liga",
+  "world cup",
+  "bundesliga",
+  "ligue 1",
+  "serie a",
+  "europa league",
+  "copa del rey",
+  "copa america",
+  "uefa euro",
+  "nations league",
+  "africa cup",
+  "asian cup",
+  "gold cup",
+  "concacaf",
+  "olympic",
+  "qualification",
+  "friendlies",
+]
 
-  function leagueOrder(name: string, country: string) {
-    const normalized = name.toLowerCase()
-    const normalizedCountry = country.toLowerCase()
+function leagueOrder(name: string, country: string) {
+  const normalized = name.toLowerCase()
+  const normalizedCountry = country.toLowerCase()
 
-    if (normalized.includes("premier league") && !normalizedCountry.includes("england")) {
-      return TOP_LEAGUE_ORDER.length
-    }
-
-    const index = TOP_LEAGUE_ORDER.findIndex((league) => normalized.includes(league))
-    return index === -1 ? TOP_LEAGUE_ORDER.length : index
+  if (normalized.includes("premier league") && !normalizedCountry.includes("england")) {
+    return TOP_LEAGUE_ORDER.length
   }
+
+  const index = TOP_LEAGUE_ORDER.findIndex((league) => normalized.includes(league))
+  return index === -1 ? TOP_LEAGUE_ORDER.length : index
+}
 
 export async function getMatches(cookie?: string): Promise<LeagueGroup[]> {
   let data: { response?: ApiFixture[] }
@@ -200,11 +200,7 @@ export async function getMatches(cookie?: string): Promise<LeagueGroup[]> {
     groups.set(key, group)
   }
 
-    return [...groups.values()].sort((left, right) => {
-      const priorityDifference = leagueOrder(left.league, left.country) - leagueOrder(right.league, right.country)
-      if (priorityDifference !== 0) return priorityDifference
-      return left.league.localeCompare(right.league)
-    })
+  return [...groups.values()]
 }
 
 export async function getMatchById(

@@ -1,3 +1,4 @@
+
 import { Router } from "express";
 import {
   getFixtures,
@@ -100,3 +101,4 @@ router.get("/:id", async (req, res) => {
 });
 
 export default router;
+

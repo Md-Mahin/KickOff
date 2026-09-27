@@ -1,3 +1,4 @@
+
 import { Pool } from "pg";
 import dotenv from "dotenv";
 import path from "path";
@@ -77,6 +78,24 @@ export async function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_user_follows_tournament ON UserFollowsTournament(UserID);
     CREATE INDEX IF NOT EXISTS idx_tournament_follows ON UserFollowsTournament(TournamentID);
+
+    CREATE TABLE IF NOT EXISTS TeamMatchCoach (
+      MatchID INT NOT NULL REFERENCES Match(MatchID) ON DELETE CASCADE,
+      TeamID INT NOT NULL REFERENCES Team(TeamID) ON DELETE CASCADE,
+      CoachID INT,
+      CoachName VARCHAR(255),
+      CoachPhoto TEXT,
+      PRIMARY KEY (MatchID, TeamID)
+    );
+
+    CREATE TABLE IF NOT EXISTS MatchUnavailablePlayer (
+      MatchID INT NOT NULL REFERENCES Match(MatchID) ON DELETE CASCADE,
+      TeamID INT NOT NULL REFERENCES Team(TeamID) ON DELETE CASCADE,
+      PlayerID INT NOT NULL REFERENCES Player(PlayerID) ON DELETE CASCADE,
+      Reason VARCHAR(255),
+      Status VARCHAR(50),
+      PRIMARY KEY (MatchID, TeamID, PlayerID)
+    );
   `);
 
   await pool.query(`
@@ -107,3 +126,4 @@ export async function initializeDatabase() {
     console.warn("Auto-seed check warning:", (err as Error).message);
   }
 }
+

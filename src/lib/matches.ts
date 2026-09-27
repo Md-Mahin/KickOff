@@ -66,6 +66,7 @@ export type MatchLineup = {
   coach: { name: string | null; photo: string | null }
   starters: MatchLineupPlayer[]
   substitutes: MatchLineupPlayer[]
+  unavailable?: { id: number; name: string; photo: string | null; reason: string; status: string }[]
 }
 
 // ── Team Profile Types ────────────────────────────────────────────────────────

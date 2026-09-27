@@ -1,3 +1,4 @@
+
 import express from "express";
 import { pool } from "../db";
 import { optionalAuth } from "../middleware/auth";
@@ -142,4 +143,5 @@ router.get("/:id", optionalAuth, async (req, res) => {
 });
 
 export default router;
+
 

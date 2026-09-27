@@ -1,3 +1,4 @@
+
 import { pool } from "../src/db";
 import { fetchEvents } from "../src/services/footballService";
 

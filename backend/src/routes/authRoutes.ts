@@ -1,3 +1,4 @@
+
 import { Router, Response } from "express";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -123,3 +124,4 @@ router.post("/logout", requireAuth, async (req, res) => {
 });
 
 export default router;
+

@@ -1,3 +1,4 @@
+
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth";
 import {
@@ -49,4 +50,5 @@ router.post("/read-all", requireAuth, async (req, res) => {
 });
 
 export default router;
+
 

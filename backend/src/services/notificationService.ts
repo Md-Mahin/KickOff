@@ -1,3 +1,4 @@
+
 import { pool } from "../db";
 
 export type NotificationType = "ABOUT_TO_START" | "JUST_STARTED" | "FINISHED";
@@ -170,4 +171,5 @@ export async function markAllNotificationsAsRead(userId: number): Promise<boolea
   );
   return true;
 }
+
 

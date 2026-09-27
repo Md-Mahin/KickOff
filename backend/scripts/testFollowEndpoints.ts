@@ -1,3 +1,4 @@
+
 import { pool } from "../src/db";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
@@ -119,3 +120,4 @@ testEndpoints().catch((err) => {
   console.error("Test failed:", err);
   process.exit(1);
 });
+

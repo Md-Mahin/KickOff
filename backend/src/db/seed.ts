@@ -1,3 +1,4 @@
+
 import fs from "fs";
 import path from "path";
 import { pool } from "./index";
@@ -20,4 +21,5 @@ async function seed() {
 }
 
 seed();
+
 

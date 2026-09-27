@@ -1,3 +1,4 @@
+
 import bcrypt from "bcrypt";
 import { pool } from "../src/db";
 
@@ -188,3 +189,4 @@ seed100Users().catch((err) => {
   console.error("Seed script failed:", err);
   process.exit(1);
 });
+

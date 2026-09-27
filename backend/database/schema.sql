@@ -1,3 +1,4 @@
+
 CREATE TABLE Country (
     CountryID     SERIAL PRIMARY KEY,
     Name          VARCHAR(100) NOT NULL UNIQUE
@@ -353,3 +354,4 @@ LEFT JOIN NewsKeyword nk ON nk.NewsID = n.NewsID
 LEFT JOIN Keyword k ON k.KeywordID = nk.KeywordID
 LEFT JOIN Comment c ON c.NewsID = n.NewsID
 GROUP BY n.NewsID, n.Title, n.PublishedAt;
+

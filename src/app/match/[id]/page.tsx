@@ -112,6 +112,7 @@ export default async function MatchPage({
                     width={64}
                     height={64}
                     className="mx-auto h-16 w-16 object-contain"
+                    style={{ width: 'auto', height: 'auto' }}
                   />
                 )}
 
@@ -158,6 +159,7 @@ export default async function MatchPage({
                     width={64}
                     height={64}
                     className="mx-auto h-16 w-16 object-contain"
+                    style={{ width: 'auto', height: 'auto' }}
                   />
                 )}
 

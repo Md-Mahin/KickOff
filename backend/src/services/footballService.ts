@@ -76,10 +76,10 @@ function mapApiItem(item: any) {
       date: item.fixture.date,
       venue: item.fixture.venue
         ? {
-            name: item.fixture.venue.name,
-            city: item.fixture.venue.city,
-            country: item.fixture.venue.country,
-          }
+          name: item.fixture.venue.name,
+          city: item.fixture.venue.city,
+          country: item.fixture.venue.country,
+        }
         : null,
       status: { short: item.fixture.status.short, elapsed: item.fixture.status.elapsed },
     },
@@ -148,10 +148,10 @@ function mapDbRow(row: any) {
 
   const venueObj = row.venuename
     ? {
-        name: row.venuename,
-        city: row.venuecity ?? null,
-        country: row.venuecountry ?? null,
-      }
+      name: row.venuename,
+      city: row.venuecity ?? null,
+      country: row.venuecountry ?? null,
+    }
     : null;
 
   return {
@@ -195,7 +195,7 @@ export async function syncFixtureToDb(item: any) {
           [league.country]
         );
         countryId = cRes.rows[0]?.countryid ?? null;
-      } catch {}
+      } catch { }
     }
 
     // 2. Tournament
@@ -208,7 +208,7 @@ export async function syncFixtureToDb(item: any) {
            Edition = COALESCE(EXCLUDED.Edition, Tournament.Edition)`,
         [league.id, league.name, String(league.season ?? new Date().getFullYear())]
       );
-    } catch {}
+    } catch { }
 
     // 3. Venue
     let venueId: number | null = null;
@@ -229,7 +229,7 @@ export async function syncFixtureToDb(item: any) {
           );
           venueId = vInsert.rows[0]?.venueid ?? null;
         }
-      } catch {}
+      } catch { }
     }
 
     // 4. Teams (Home and Away)
@@ -250,7 +250,7 @@ export async function syncFixtureToDb(item: any) {
            Logo = COALESCE(EXCLUDED.Logo, Team.Logo)`,
         [away.id, away.name, away.logo ?? null, countryId]
       );
-    } catch {}
+    } catch { }
 
     // 5. Match
     const matchDate = item.fixture.date ? new Date(item.fixture.date) : new Date();
@@ -308,7 +308,7 @@ export async function syncFixtureToDb(item: any) {
               [fixtureId, refId]
             );
           }
-        } catch {}
+        } catch { }
       }
     }
   } catch (err) {
@@ -316,91 +316,181 @@ export async function syncFixtureToDb(item: any) {
   }
 }
 
-export async function syncLineupsToDb(fixtureId: number, apiLineups: any[]) {
-  if (!Array.isArray(apiLineups) || apiLineups.length === 0) return;
+export async function syncLineupsToDb(
+  matchId: number,
+  apiLineups: any[]
+) {
+  if (!Array.isArray(apiLineups) || apiLineups.length === 0) {
+    return;
+  }
+
   try {
     for (const item of apiLineups) {
-      const teamId = Number(item.team?.id);
-      const formation = item.formation ?? "4-3-3";
-      if (!teamId) continue;
+      const teamApiId = Number(item.team?.id);
 
-      if (item.team?.name) {
-        try {
-          await pool.query(
-            `INSERT INTO Team (TeamID, Name, Logo)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (TeamID) DO UPDATE SET
-               Name = EXCLUDED.Name,
-               Logo = COALESCE(EXCLUDED.Logo, Team.Logo)`,
-            [teamId, item.team.name, item.team.logo ?? null]
-          );
-        } catch {}
+      if (!teamApiId) {
+        continue;
       }
 
-      // Starters
+      const formation =
+        item.formation ??
+        null;
+
+      // ------------------------------------------------------------
+      // TEAM
+      // ------------------------------------------------------------
+
+      const teamResult = await pool.query(
+        `
+        SELECT TeamID
+        FROM Team
+        WHERE TeamID = $1
+           OR ApiTeamID = $1
+        LIMIT 1
+        `,
+        [teamApiId]
+      );
+
+      if (teamResult.rows.length === 0) {
+        console.warn(
+          `Lineup sync: team ${teamApiId} not found in database`
+        );
+        continue;
+      }
+
+      const teamId = Number(teamResult.rows[0].teamid);
+
+      // ------------------------------------------------------------
+      // COACH
+      // API-Football lineup response contains:
+      // coach: { id, name, photo }
+      // ------------------------------------------------------------
+
+      const coach = item.coach;
+
+      if (coach?.name) {
+        await pool.query(
+          `
+          INSERT INTO TeamMatchCoach
+          (
+            MatchID,
+            TeamID,
+            CoachID,
+            CoachName,
+            CoachPhoto
+          )
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (MatchID, TeamID)
+          DO UPDATE SET
+            CoachID = EXCLUDED.CoachID,
+            CoachName = EXCLUDED.CoachName,
+            CoachPhoto = EXCLUDED.CoachPhoto
+          `,
+          [
+            matchId,
+            teamId,
+            coach.id ? Number(coach.id) : null,
+            coach.name ?? null,
+            coach.photo ?? null,
+          ]
+        );
+      }
+
+      // ------------------------------------------------------------
+      // HELPER: save player
+      // ------------------------------------------------------------
+
+      const savePlayer = async (
+        player: any,
+        status: "Starter" | "Sub"
+      ) => {
+        if (!player?.id || !player?.name) {
+          return;
+        }
+
+        const playerId = Number(player.id);
+
+        await pool.query(
+          `
+          INSERT INTO Player
+          (
+            PlayerID,
+            Name,
+            Position,
+            Photo
+          )
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (PlayerID)
+          DO UPDATE SET
+            Name = EXCLUDED.Name,
+            Position = COALESCE(EXCLUDED.Position, Player.Position),
+            Photo = COALESCE(EXCLUDED.Photo, Player.Photo)
+          `,
+          [
+            playerId,
+            player.name,
+            player.pos ?? null,
+            player.photo ?? null,
+          ]
+        );
+
+        await pool.query(
+          `
+          INSERT INTO Lineup
+          (
+            MatchID,
+            TeamID,
+            PlayerID,
+            Status,
+            Formation,
+            Position,
+            JerseyNumber
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (MatchID, TeamID, PlayerID)
+          DO UPDATE SET
+            Status = EXCLUDED.Status,
+            Formation = EXCLUDED.Formation,
+            Position = EXCLUDED.Position,
+            JerseyNumber = EXCLUDED.JerseyNumber
+          `,
+          [
+            matchId,
+            teamId,
+            playerId,
+            status,
+            formation,
+            player.pos ?? null,
+            player.number ?? null,
+          ]
+        );
+      };
+
+      // ------------------------------------------------------------
+      // STARTING XI
+      // ------------------------------------------------------------
+
       for (const entry of item.startXI ?? []) {
-        const p = entry.player;
-        if (!p?.id || !p?.name) continue;
-        const pid = Number(p.id);
-
-        try {
-          await pool.query(
-            `INSERT INTO Player (PlayerID, Name, Position)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (PlayerID) DO UPDATE SET
-               Name = EXCLUDED.Name,
-               Position = COALESCE(EXCLUDED.Position, Player.Position)`,
-            [pid, p.name, p.pos ?? null]
-          );
-
-          await pool.query(
-            `INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation, Position, JerseyNumber)
-             VALUES ($1, $2, $3, 'Starter', $4, $5, $6)
-             ON CONFLICT (MatchID, TeamID, PlayerID) DO UPDATE SET
-               Status = EXCLUDED.Status,
-               Formation = EXCLUDED.Formation,
-               Position = EXCLUDED.Position,
-               JerseyNumber = EXCLUDED.JerseyNumber`,
-            [fixtureId, teamId, pid, formation, p.pos ?? null, p.number ?? null]
-          );
-        } catch (pErr) {
-          console.warn("sync starter error:", (pErr as Error).message);
-        }
+        await savePlayer(entry.player, "Starter");
       }
 
-      // Substitutes
+      // ------------------------------------------------------------
+      // BENCH / SUBSTITUTES
+      // ------------------------------------------------------------
+
       for (const entry of item.substitutes ?? []) {
-        const p = entry.player;
-        if (!p?.id || !p?.name) continue;
-        const pid = Number(p.id);
-
-        try {
-          await pool.query(
-            `INSERT INTO Player (PlayerID, Name, Position)
-             VALUES ($1, $2, $3)
-             ON CONFLICT (PlayerID) DO UPDATE SET
-               Name = EXCLUDED.Name,
-               Position = COALESCE(EXCLUDED.Position, Player.Position)`,
-            [pid, p.name, p.pos ?? null]
-          );
-
-          await pool.query(
-            `INSERT INTO Lineup (MatchID, TeamID, PlayerID, Status, Formation, Position, JerseyNumber)
-             VALUES ($1, $2, $3, 'Sub', $4, $5, $6)
-             ON CONFLICT (MatchID, TeamID, PlayerID) DO UPDATE SET
-               Status = EXCLUDED.Status,
-               Formation = EXCLUDED.Formation,
-               Position = EXCLUDED.Position,
-               JerseyNumber = EXCLUDED.JerseyNumber`,
-            [fixtureId, teamId, pid, formation, p.pos ?? null, p.number ?? null]
-          );
-        } catch (pErr) {
-          console.warn("sync sub error:", (pErr as Error).message);
-        }
+        await savePlayer(entry.player, "Sub");
       }
     }
-  } catch (err) {
-    console.warn("syncLineupsToDb error:", (err as Error).message);
+
+    console.log(
+      `[Lineups] Synced ${apiLineups.length} teams for match ${matchId}`
+    );
+  } catch (error) {
+    console.warn(
+      "syncLineupsToDb error:",
+      (error as Error).message
+    );
   }
 }
 
@@ -544,7 +634,7 @@ export async function getFixtures() {
     if (Array.isArray(rawItems) && rawItems.length > 0) {
       console.log(`Syncing ${rawItems.length} fixtures from API into DB...`);
       for (const item of rawItems) {
-        syncFixtureToDb(item).catch(() => {});
+        syncFixtureToDb(item).catch(() => { });
       }
     }
   } catch (e) {
@@ -605,10 +695,15 @@ export async function getFavouriteFixtures(userId: number) {
     );
 
     if (teamIds.size === 0 && playerIds.size === 0) {
-      return { response: [] };
+      const { rows } = await pool.query(
+        `${BASE_QUERY} ORDER BY m.MatchDate DESC`
+      );
+
+      return {
+        response: rows.map(mapDbRow),
+      };
     }
 
-    // Get the current teams of followed players
     const playerTeamRows = await pool.query(
       `SELECT DISTINCT TeamID
        FROM TeamPlayerHistory
@@ -621,14 +716,12 @@ export async function getFavouriteFixtures(userId: number) {
       playerTeamRows.rows.map((row: any) => Number(row.teamid))
     );
 
-    // Get today's matches from PostgreSQL
     const { rows } = await pool.query(
       `${BASE_QUERY} ORDER BY m.MatchDate DESC`
     );
 
     const allMatches = rows.map(mapDbRow);
 
-    // Matches involving directly followed teams
     const teamMatches = allMatches.filter((match) =>
       teamIds.has(Number(match.teams.home.id)) ||
       teamIds.has(Number(match.teams.away.id))
@@ -638,7 +731,6 @@ export async function getFavouriteFixtures(userId: number) {
       teamMatches.map((match) => match.fixture.id)
     );
 
-    // Matches involving teams of followed players
     const playerMatches = allMatches.filter((match) => {
       if (teamMatchIds.has(match.fixture.id)) {
         return false;
@@ -654,7 +746,6 @@ export async function getFavouriteFixtures(userId: number) {
       playerMatches.map((match) => match.fixture.id)
     );
 
-    // Everything else
     const otherMatches = allMatches.filter(
       (match) =>
         !teamMatchIds.has(match.fixture.id) &&
@@ -666,7 +757,7 @@ export async function getFavouriteFixtures(userId: number) {
         ...teamMatches,
         ...playerMatches,
         ...otherMatches,
-      ].slice(0, 10),
+      ],
     };
   } catch (e) {
     console.warn(
@@ -914,7 +1005,7 @@ export async function getMatchEvents(fixtureId: number) {
     if (mRes.rows.length > 0 && mRes.rows[0].matchdate) {
       matchDate = new Date(mRes.rows[0].matchdate);
     }
-  } catch {}
+  } catch { }
 
   // If matchDate is in the future (kickoff not reached):
   if (matchDate) {
@@ -1029,157 +1120,379 @@ export async function getMatchEvents(fixtureId: number) {
 
 export async function getMatchLineups(fixtureId: number) {
   try {
-    // 1. Ensure match exists in DB
+    // ============================================================
+    // 1. Resolve database match
+    // ============================================================
+
     let matchRes = await pool.query(
-      `SELECT HomeTeamID, AwayTeamID, MatchDate FROM Match WHERE MatchID = $1`,
+      `SELECT MatchID, HomeTeamID, AwayTeamID
+   FROM Match
+   WHERE MatchID = $1
+   LIMIT 1`,
       [fixtureId]
     );
 
+    // If match isn't stored yet, try API-Football once.
     if (matchRes.rows.length === 0) {
       try {
         const raw = await fetchById(fixtureId);
+
         if (raw) {
           await syncFixtureToDb(raw);
+
           matchRes = await pool.query(
-            `SELECT HomeTeamID, AwayTeamID, MatchDate FROM Match WHERE MatchID = $1`,
+            `SELECT MatchID, HomeTeamID, AwayTeamID
+   FROM Match
+   WHERE MatchID = $1
+   LIMIT 1`,
             [fixtureId]
           );
         }
-      } catch (e) {
-        console.warn("getMatchLineups fixture sync error:", (e as Error).message);
+      } catch (error) {
+        console.warn(
+          "getMatchLineups fixture sync:",
+          (error as Error).message
+        );
       }
     }
 
-    if (matchRes.rows.length === 0) return [];
+    if (matchRes.rows.length === 0) {
+      return [];
+    }
+
     const matchRow = matchRes.rows[0];
 
-    // Only matches which are about to happen within 1hr should have lineups.
-    // Otherwise no lineups for matches remaining in the upcoming section.
-    if (matchRow.matchdate) {
-      const matchDate = new Date(matchRow.matchdate);
-      const timeUntilKickoff = matchDate.getTime() - Date.now();
-      if (timeUntilKickoff > 60 * 60 * 1000) {
-        return [];
+    const matchId = Number(matchRow.matchid);
+
+    const apiFixtureId = fixtureId;
+
+    // ============================================================
+    // 2. Try to get fresh API-Football lineup data
+    // ============================================================
+
+    let apiLineups: any[] = [];
+
+    if (apiFixtureId !== null) {
+      try {
+        const fetched = await fetchLineups(apiFixtureId);
+
+        if (Array.isArray(fetched)) {
+          apiLineups = fetched;
+        }
+
+        if (apiLineups.length > 0) {
+          await syncLineupsToDb(matchId, apiLineups);
+        }
+      } catch (error) {
+        console.warn(
+          "API lineup unavailable; using database lineup:",
+          (error as Error).message
+        );
       }
     }
 
-    const isUpcoming = matchRow.matchdate ? new Date(matchRow.matchdate).getTime() > Date.now() : false;
+    // ============================================================
+    // 3. Fetch player match statistics
+    //
+    // API-Football's /fixtures/players endpoint contains
+    // ratings and match statistics.
+    // ============================================================
 
-    // For upcoming matches, clean up any 'Sub' records in Lineup
-    if (isUpcoming) {
-      await pool.query(`DELETE FROM Lineup WHERE MatchID = $1 AND Status = 'Sub'`, [fixtureId]);
-    }
+    const playerStats = new Map<
+      number,
+      {
+        rating: number | null;
+        goals: number;
+        assists: number;
+        yellowCards: number;
+        redCards: number;
+        minutes: number | null;
+      }
+    >();
 
-    // 2. Ensure each team in the match has at least 11 starters
-    for (const teamId of [matchRow.hometeamid, matchRow.awayteamid]) {
-      const countRes = await pool.query(
-        `SELECT COUNT(*) FROM Lineup WHERE MatchID = $1 AND TeamID = $2 AND Status = 'Starter'`,
-        [fixtureId, teamId]
-      );
-      const starterCount = parseInt(countRes.rows[0].count, 10);
+    if (apiFixtureId !== null) {
+      try {
+        const stats = await fetchPlayerStats(apiFixtureId);
 
-      if (starterCount < 11) {
-        // Try API first
-        try {
-          const apiLineups = await fetchLineups(fixtureId);
-          if (Array.isArray(apiLineups) && apiLineups.length > 0) {
-            await syncLineupsToDb(fixtureId, apiLineups);
+        if (Array.isArray(stats)) {
+          for (const teamBlock of stats) {
+            for (const playerBlock of teamBlock.players ?? []) {
+              const player = playerBlock.player;
+              const statistics = playerBlock.statistics?.[0];
+
+              if (!player?.id) {
+                continue;
+              }
+
+              const statsNumber = Number(player.id);
+
+              playerStats.set(statsNumber, {
+                rating:
+                  statistics?.games?.rating != null
+                    ? Number(statistics.games.rating)
+                    : null,
+
+                goals:
+                  statistics?.goals?.total != null
+                    ? Number(statistics.goals.total)
+                    : 0,
+
+                assists:
+                  statistics?.goals?.assists != null
+                    ? Number(statistics.goals.assists)
+                    : 0,
+
+                yellowCards:
+                  statistics?.cards?.yellow != null
+                    ? Number(statistics.cards.yellow)
+                    : 0,
+
+                redCards:
+                  statistics?.cards?.red != null
+                    ? Number(statistics.cards.red)
+                    : 0,
+
+                minutes:
+                  statistics?.games?.minutes != null
+                    ? Number(statistics.games.minutes)
+                    : null,
+              });
+            }
           }
-        } catch (e) {}
-
-        // If still fewer than 11, seed default or reuse squad
-        await seedDefaultLineupForMatch(fixtureId, teamId, teamId);
+        }
+      } catch (error) {
+        console.warn(
+          "API player statistics unavailable:",
+          (error as Error).message
+        );
       }
     }
 
-    // 5. Query Lineup directly from the PostgreSQL DB table!
-    const teamsToFetch = [matchRow.hometeamid, matchRow.awayteamid];
-    const results = [];
+    // ============================================================
+    // 4. Get teams
+    // ============================================================
 
-    for (const teamId of teamsToFetch) {
-      // Get Team Info
+    const teamIds = [
+      Number(matchRow.hometeamid),
+      Number(matchRow.awayteamid),
+    ];
+
+    const results: any[] = [];
+
+    // ============================================================
+    // 5. Build lineup for each team
+    // ============================================================
+
+    for (const teamId of teamIds) {
       const teamRes = await pool.query(
-        `SELECT Name, Logo FROM Team WHERE TeamID = $1`,
+        `
+        SELECT
+          TeamID,
+          Name,
+          Logo
+        FROM Team
+        WHERE TeamID = $1
+        `,
         [teamId]
       );
-      if (teamRes.rows.length === 0) continue;
-      const teamRow = teamRes.rows[0];
 
-      // Get Lineup Players from Lineup and Player tables!
+      if (teamRes.rows.length === 0) {
+        continue;
+      }
+
+      const team = teamRes.rows[0];
+
+      // ----------------------------------------------------------
+      // Lineup players
+      // ----------------------------------------------------------
+
       const lineupRes = await pool.query(
         `
-        SELECT l.Status, l.Formation, l.Position, l.JerseyNumber, p.PlayerID, p.Name, p.Photo
+        SELECT
+          l.Status,
+          l.Formation,
+          l.Position,
+          l.JerseyNumber,
+
+          p.PlayerID,
+          p.Name,
+          p.Photo
+
         FROM Lineup l
-        JOIN Player p ON l.PlayerID = p.PlayerID
-        WHERE l.MatchID = $1 AND l.TeamID = $2
-        ORDER BY l.Status DESC, l.JerseyNumber ASC, p.PlayerID ASC
+
+        JOIN Player p
+          ON p.PlayerID = l.PlayerID
+
+        WHERE l.MatchID = $1
+          AND l.TeamID = $2
+
+        ORDER BY
+          CASE
+            WHEN l.Status = 'Starter' THEN 0
+            ELSE 1
+          END,
+          l.JerseyNumber NULLS LAST,
+          p.Name
         `,
-        [fixtureId, teamId]
+        [matchId, teamId]
       );
+
+      // ----------------------------------------------------------
+      // Coach
+      // ----------------------------------------------------------
+
+      const coachRes = await pool.query(
+        `
+        SELECT
+          CoachID,
+          CoachName,
+          CoachPhoto
+        FROM TeamMatchCoach
+        WHERE MatchID = $1
+          AND TeamID = $2
+        LIMIT 1
+        `,
+        [matchId, teamId]
+      );
+
+      const coachRow = coachRes.rows[0];
+
+      const coach = {
+        id: coachRow?.coachid ?? null,
+        name: coachRow?.coachname ?? null,
+        photo: coachRow?.coachphoto ?? null,
+      };
+
+      // ----------------------------------------------------------
+      // Players
+      // ----------------------------------------------------------
 
       const starters: any[] = [];
       const substitutes: any[] = [];
-      let dbFormation = "4-3-3";
-      let starterIdx = 0;
-      const defaultPositions = ["G", "D", "D", "D", "D", "M", "M", "M", "F", "F", "F"];
 
-      lineupRes.rows.forEach((row: any) => {
-        if (row.formation) dbFormation = row.formation;
+      let formation: string | null = null;
 
-        let pos = row.position;
-        if (!pos) {
-          if (row.status === "Starter") {
-            pos = defaultPositions[starterIdx % defaultPositions.length];
-          } else {
-            pos = "Sub";
-          }
+      for (const row of lineupRes.rows) {
+        if (row.formation) {
+          formation = row.formation;
         }
 
-        const playerObj = {
-          id: row.playerid,
+        const stats =
+          playerStats.get(Number(row.playerid)) ?? null;
+
+        const player = {
+          id: Number(row.playerid),
+
           name: row.name,
+
           photo: row.photo ?? null,
-          number: row.jerseynumber ?? ((row.playerid % 99) + 1),
-          position: pos,
+
+          number:
+            row.jerseynumber !== null
+              ? Number(row.jerseynumber)
+              : null,
+
+          position: row.position ?? null,
+
+          // API-Football gives a grid such as "1:1", "2:3", etc.
+          // Your current DB does not store grid, so this remains null
+          // when reading persisted data.
           grid: null,
-          rating: (Math.random() * 2 + 7).toFixed(1),
-          goals: 0,
-          assists: 0,
-          yellowCards: 0,
-          redCards: 0,
+
+          rating: stats?.rating ?? null,
+
+          goals: stats?.goals ?? 0,
+
+          assists: stats?.assists ?? 0,
+
+          yellowCards: stats?.yellowCards ?? 0,
+
+          redCards: stats?.redCards ?? 0,
+
+          minutes: stats?.minutes ?? null,
         };
 
         if (row.status === "Starter") {
-          starters.push(playerObj);
-          starterIdx++;
-        } else if (!isUpcoming) {
-          substitutes.push(playerObj);
+          starters.push(player);
+        } else {
+          substitutes.push(player);
         }
-      });
+      }
+
+      // ----------------------------------------------------------
+      // Injured / unavailable players
+      // ----------------------------------------------------------
+
+      const unavailableRes = await pool.query(
+        `
+        SELECT
+          mup.PlayerID,
+          p.Name,
+          p.Photo,
+          mup.Reason,
+          mup.Status
+        FROM MatchUnavailablePlayer mup
+        JOIN Player p
+          ON p.PlayerID = mup.PlayerID
+        WHERE mup.MatchID = $1
+          AND mup.TeamID = $2
+        ORDER BY p.Name
+        `,
+        [matchId, teamId]
+      );
+
+      const unavailable = unavailableRes.rows.map(
+        (row: any) => ({
+          id: Number(row.playerid),
+          name: row.name,
+          photo: row.photo ?? null,
+          reason: row.reason ?? "Unavailable",
+          status: row.status ?? "Unavailable",
+        })
+      );
+
+      // ----------------------------------------------------------
+      // Don't return empty fake lineup
+      // ----------------------------------------------------------
+
+      if (
+        starters.length === 0 &&
+        substitutes.length === 0 &&
+        unavailable.length === 0 &&
+        !coach.name
+      ) {
+        continue;
+      }
 
       results.push({
         team: {
-          id: teamId,
-          name: teamRow.name,
-          logo: teamRow.logo,
+          id: team.teamid,
+          name: team.name,
+          logo: team.logo ?? null,
         },
-        formation: dbFormation,
-        coach: {
-          name: "Manager of " + teamRow.name,
-          photo: null,
-        },
+
+        formation,
+
+        coach,
+
         starters,
+
         substitutes,
+
+        unavailable,
       });
     }
 
     return results;
   } catch (error) {
-    console.warn("DB/API getMatchLineups:", (error as Error).message);
+    console.warn(
+      "DB/API getMatchLineups:",
+      (error as Error).message
+    );
+
     return [];
   }
 }
-
 export async function syncMatchEvents(fixtureId: number) {
   const apiResult = await fetchEvents(fixtureId);
 
@@ -1234,13 +1547,13 @@ export async function syncMatchEvents(fixtureId: number) {
 
     const playerResult = playerApiId
       ? await pool.query(
-          `
+        `
           SELECT PlayerID
           FROM Player
           WHERE ApiPlayerID = $1
           `,
-          [playerApiId]
-        )
+        [playerApiId]
+      )
       : { rows: [] };
 
     const playerId =
@@ -1288,13 +1601,13 @@ export async function syncMatchEvents(fixtureId: number) {
     if (eventType === "Goal") {
       const assistResult = assistApiId
         ? await pool.query(
-            `
+          `
             SELECT PlayerID
             FROM Player
             WHERE ApiPlayerID = $1
             `,
-            [assistApiId]
-          )
+          [assistApiId]
+        )
         : { rows: [] };
 
       const assistPlayerId =
@@ -1392,3 +1705,4 @@ export async function getPlayersCatalog() {
     return { players: [] };
   }
 }
+
