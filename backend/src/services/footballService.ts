@@ -99,10 +99,11 @@ async function apiFetch(path: string) {
   if (!res.ok) throw new Error(`API-Football ${path} → ${res.status}`);
   return ((await res.json()) as { response: any[] }).response;
 }
+type FixtureItem = ReturnType<typeof mapApiItem>;
 
-async function fetchByDate(date: string) {
+async function fetchByDate(date: string): Promise<FixtureItem[]> {
   const items = await apiFetch(`/fixtures?date=${date}`);
-  return items.map(mapApiItem);
+  return items.map(mapApiItem) as FixtureItem[];
 }
 export async function fetchEvents(fixtureId: number) {
   return apiFetch(`/fixtures/events?fixture=${fixtureId}`);
@@ -582,30 +583,97 @@ export async function getPopularFixtures() {
 export async function getFavouriteFixtures(userId: number) {
   try {
     const { rows: teamRows } = await pool.query(
-      `SELECT TeamID FROM UserFollowsTeam WHERE UserID = $1`, [userId]
+      `SELECT TeamID
+       FROM UserFollowsTeam
+       WHERE UserID = $1`,
+      [userId]
     );
-    const teamIds = new Set(teamRows.map((r: any) => Number(r.teamid)));
+
+    const teamIds = new Set(
+      teamRows.map((row: any) => Number(row.teamid))
+    );
 
     const { rows: playerRows } = await pool.query(
-      `SELECT ufp.PlayerID FROM UserFollowsPlayer ufp WHERE ufp.UserID = $1`, [userId]
+      `SELECT PlayerID
+       FROM UserFollowsPlayer
+       WHERE UserID = $1`,
+      [userId]
     );
-    const playerIds = new Set(playerRows.map((r: any) => Number(r.playerid)));
 
-    if (teamIds.size === 0 && playerIds.size === 0) return { response: [] };
+    const playerIds = new Set(
+      playerRows.map((row: any) => Number(row.playerid))
+    );
 
-    // Get today's fixtures from DB
-    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC`);
+    if (teamIds.size === 0 && playerIds.size === 0) {
+      return { response: [] };
+    }
+
+    // Get the current teams of followed players
+    const playerTeamRows = await pool.query(
+      `SELECT DISTINCT TeamID
+       FROM TeamPlayerHistory
+       WHERE PlayerID = ANY($1::int[])
+         AND EndDate IS NULL`,
+      [[...playerIds]]
+    );
+
+    const playerTeamIds = new Set(
+      playerTeamRows.rows.map((row: any) => Number(row.teamid))
+    );
+
+    // Get today's matches from PostgreSQL
+    const { rows } = await pool.query(
+      `${BASE_QUERY} ORDER BY m.MatchDate DESC`
+    );
+
     const allMatches = rows.map(mapDbRow);
 
-    const teamMatches = allMatches.filter(f =>
-      teamIds.has(Number(f.teams.home.id)) || teamIds.has(Number(f.teams.away.id))
+    // Matches involving directly followed teams
+    const teamMatches = allMatches.filter((match) =>
+      teamIds.has(Number(match.teams.home.id)) ||
+      teamIds.has(Number(match.teams.away.id))
     );
-    const teamMatchIds = new Set(teamMatches.map(f => f.fixture.id));
-    const otherMatches = allMatches.filter(f => !teamMatchIds.has(f.fixture.id));
 
-    return { response: [...teamMatches, ...otherMatches].slice(0, 10) };
+    const teamMatchIds = new Set(
+      teamMatches.map((match) => match.fixture.id)
+    );
+
+    // Matches involving teams of followed players
+    const playerMatches = allMatches.filter((match) => {
+      if (teamMatchIds.has(match.fixture.id)) {
+        return false;
+      }
+
+      return (
+        playerTeamIds.has(Number(match.teams.home.id)) ||
+        playerTeamIds.has(Number(match.teams.away.id))
+      );
+    });
+
+    const playerMatchIds = new Set(
+      playerMatches.map((match) => match.fixture.id)
+    );
+
+    // Everything else
+    const otherMatches = allMatches.filter(
+      (match) =>
+        !teamMatchIds.has(match.fixture.id) &&
+        !playerMatchIds.has(match.fixture.id)
+    );
+
+    return {
+      response: [
+        ...teamMatches,
+        ...playerMatches,
+        ...otherMatches,
+      ].slice(0, 10),
+    };
   } catch (e) {
-    console.warn("getFavouriteFixtures:", (e as Error).message);
+    console.warn(
+      "getFavouriteFixtures:",
+      (e as Error).message
+    );
+
     return { response: [] };
   }
 }
@@ -1287,30 +1355,34 @@ export async function syncMatchEvents(fixtureId: number) {
   }
 }
 /** Team catalog for signup (national + club, sourced from today's fixtures). */
+/** Team catalog for signup/search — PostgreSQL only. */
 export async function getTeamsCatalog() {
-  const teamMap = new Map<number, { id: number; name: string; logo: string | null; type: "national" | "club" }>();
-
   try {
-    const items = await fetchByDate(todayStr());
-    for (const f of items) {
-      const type = isNationalLeague(f.league.name) ? "national" : "club";
-      if (!teamMap.has(f.teams.home.id)) teamMap.set(f.teams.home.id, { ...f.teams.home, type });
-      if (!teamMap.has(f.teams.away.id)) teamMap.set(f.teams.away.id, { ...f.teams.away, type });
-    }
-  } catch (e) { console.warn("API getTeamsCatalog:", (e as Error).message); }
+    const { rows } = await pool.query(`
+      SELECT
+        TeamID AS id,
+        Name AS name,
+        Logo AS logo,
+        COALESCE(Type, 'club') AS type
+      FROM Team
+      ORDER BY Name
+    `);
 
-  // Also merge from DB
-  try {
-    const { rows } = await pool.query(
-      `SELECT TeamID AS id, Name AS name, Logo AS logo, COALESCE(Type, 'club') AS type FROM Team ORDER BY Name`
-    );
-    for (const row of rows) { if (!teamMap.has(row.id)) teamMap.set(row.id, row); }
-  } catch {}
+    const national = rows.filter((t: any) => t.type === "national");
+    const club = rows.filter((t: any) => t.type !== "national");
 
-  const all = [...teamMap.values()].sort((a, b) => a.name.localeCompare(b.name));
-  return { national: all.filter(t => t.type === "national"), club: all.filter(t => t.type === "club") };
+    return {
+      national,
+      club,
+    };
+  } catch (error) {
+    console.warn("DB getTeamsCatalog:", (error as Error).message);
+    return {
+      national: [],
+      club: [],
+    };
+  }
 }
-
 /** Player catalog for signup (from DB only). */
 export async function getPlayersCatalog() {
   try {
