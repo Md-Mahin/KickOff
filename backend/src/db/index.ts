@@ -66,12 +66,30 @@ export async function initializeDatabase() {
       ADD COLUMN IF NOT EXISTS CoachName VARCHAR(255),
       ADD COLUMN IF NOT EXISTS CoachPhoto TEXT;
 
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS ApiFixtureID BIGINT;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_match_api_fixture_id
+      ON Match(ApiFixtureID) WHERE ApiFixtureID IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS UserSessions (
       SessionID UUID PRIMARY KEY,
       UserID INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
       ExpiresAt TIMESTAMP NOT NULL,
       RevokedAt TIMESTAMP,
       CreatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS ApiFootballDailyUsage (
+      UsageDate DATE PRIMARY KEY DEFAULT CURRENT_DATE,
+      RequestCount INTEGER NOT NULL DEFAULT 0,
+      UpdatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS MatchApiCache (
+      MatchID INTEGER NOT NULL,
+      Endpoint VARCHAR(20) NOT NULL,
+      Payload JSONB NOT NULL DEFAULT '[]'::jsonb,
+      FetchedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (MatchID, Endpoint)
     );
 
     CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON UserSessions(UserID);

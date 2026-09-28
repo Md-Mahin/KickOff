@@ -638,6 +638,14 @@ export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; even
             <div className="absolute left-1/2 top-1/2 h-[26%] aspect-square -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white/60 pointer-events-none" />
             <div className="absolute left-1/2 top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/70 pointer-events-none" />
 
+            {!lineups.slice(0, 2).some((lineup) => (lineup.starters?.length ?? 0) > 0) && (
+              <div className="absolute inset-0 z-[5] flex items-center justify-center p-4 pointer-events-none">
+                <span className="rounded-lg bg-black/65 px-4 py-2 text-center text-sm font-semibold text-white shadow">
+                  Starting XI not available yet
+                </span>
+              </div>
+            )}
+
             {/* ── Left Goal & Penalty Area (Home Team Defending) ── */}
             {/* 18-Yard Penalty Area */}
             <div className="absolute left-2 sm:left-3 top-[22%] bottom-[22%] w-[16%] border-2 border-l-0 border-white/60 pointer-events-none" />
