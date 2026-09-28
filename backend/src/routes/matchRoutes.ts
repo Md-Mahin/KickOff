@@ -1,16 +1,14 @@
 import { Router, Request, Response } from "express";
 import {
   getFixtures,
-  getMatchById,
   getPopularFixtures,
   getFavouriteFixtures,
-  getMatchEvents,
-  getMatchLineups,
 } from "../services/footballService";
 import {
   getBasicMatchList,
   executeMatchDetailPipeline,
   pullMatchDetailsFromDatabase,
+  getCachedMatchEndpoint,
 } from "../services/matchPipelineService";
 import { optionalAuth, requireAuth } from "../middleware/auth";
 
@@ -102,99 +100,44 @@ router.get("/:id/details", async (req: Request, res: Response) => {
 
 // GET /api/matches/:id/events
 router.get("/:id/events", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid match ID" });
   try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id) || id <= 0) {
-      return res.status(400).json({ message: "Invalid match ID" });
-    }
-
-    // Step 1: Check if match details and events already exist directly in DB
-    const existingDb = await pullMatchDetailsFromDatabase(id);
-    if (existingDb) {
-      if (existingDb.fixture.status.short === "UPCOMING") {
-        return res.json({ events: [] });
-      }
-      if (Array.isArray(existingDb.events) && existingDb.events.length > 0) {
-        return res.json({ events: existingDb.events });
-      }
-    }
-
-    // Step 2: Strict Pipeline (API / Mock -> Store in DB -> Pull from DB)
-    const pipelineData = await executeMatchDetailPipeline(id);
-    if (pipelineData) {
-      if (pipelineData.fixture?.status?.short === "UPCOMING") {
-        return res.json({ events: [] });
-      }
-      if (Array.isArray(pipelineData.events)) {
-        return res.json({ events: pipelineData.events });
-      }
-    }
-
-    // Fallback to legacy
-    const events = await getMatchEvents(id);
-    res.json({ events: events ?? [] });
+    const result = await getCachedMatchEndpoint(id, "events");
+    if (!result) return res.status(404).json({ message: "Match not found" });
+    return res.json({ events: result.match?.events ?? [] });
   } catch (error) {
-    console.error(`GET /api/matches/${req.params.id}/events error:`, error);
-    try {
-      const fallbackEvents = await getMatchEvents(Number(req.params.id));
-      res.json({ events: fallbackEvents ?? [] });
-    } catch {
-      res.status(500).json({ message: "Failed to fetch match events" });
-    }
+    console.error(`GET /api/matches/${id}/events error:`, error);
+    return res.status(500).json({ message: "Failed to fetch match events" });
   }
 });
-
 // GET /api/matches/:id/lineups
 router.get("/:id/lineups", async (req: Request, res: Response) => {
+  const id = Number(req.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) return res.status(400).json({ message: "Invalid match ID" });
   try {
-    const id = Number(req.params.id);
-    if (Number.isNaN(id) || id <= 0) {
-      return res.status(400).json({ message: "Invalid match ID" });
-    }
-
-    // Step 1: Check if match lineups already exist directly in DB
-    const existingDb = await pullMatchDetailsFromDatabase(id);
-    if (existingDb && Array.isArray(existingDb.lineups) && existingDb.lineups.length > 0) {
-      return res.json({ lineups: existingDb.lineups });
-    }
-
-    // Step 2: Strict Pipeline
-    const pipelineData = await executeMatchDetailPipeline(id);
-    if (pipelineData && Array.isArray(pipelineData.lineups)) {
-      return res.json({ lineups: pipelineData.lineups });
-    }
-
-    // Fallback to legacy
-    const lineups = await getMatchLineups(id);
-    res.json({ lineups: lineups ?? [] });
+    const result = await getCachedMatchEndpoint(id, "lineups");
+    if (!result) return res.status(404).json({ message: "Match not found" });
+    return res.json({ lineups: result.match?.lineups ?? [] });
   } catch (error) {
-    console.error(`GET /api/matches/${req.params.id}/lineups error:`, error);
-    try {
-      const fallbackLineups = await getMatchLineups(Number(req.params.id));
-      res.json({ lineups: fallbackLineups ?? [] });
-    } catch {
-      res.status(500).json({ message: "Failed to fetch match lineups" });
-    }
+    console.error(`GET /api/matches/${id}/lineups error:`, error);
+    return res.status(500).json({ message: "Failed to fetch match lineups" });
   }
 });
-
-// GET /api/matches/:id — Uses the strict pipeline to populate DB and read directly from DB
+// GET /api/matches/:id — database-backed match header; details use lazy endpoints.
 router.get("/:id", async (req: Request, res: Response) => {
   try {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(400).json({ message: "Invalid match ID" });
 
     // Use pipeline: 1. API/Mock -> 2. Store to DB -> 3. Return from DB
-    const match = await executeMatchDetailPipeline(id);
+    const match = await pullMatchDetailsFromDatabase(id);
     if (!match) return res.status(404).json({ message: "Match not found" });
 
     res.json(match);
   } catch (error) {
     console.error("GET /api/matches/:id error:", error);
-    // Fallback to legacy getMatchById if pipeline threw unexpected error
-    const match = await getMatchById(Number(req.params.id));
-    if (!match) return res.status(404).json({ message: "Match not found" });
-    res.json(match);
+    res.status(500).json({ message: "Failed to fetch match" });
   }
 });
 

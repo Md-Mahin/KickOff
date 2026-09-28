@@ -111,9 +111,9 @@ export default async function MatchPage({
 
           <div className="flex items-center gap-2 text-xs">
             <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="font-semibold text-slate-700">Pipeline Active:</span>
+            <span className="font-semibold text-slate-700">Match data:</span>
             <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] text-slate-600 border border-slate-200">
-              API/Mock → PostgreSQL DB → Client
+              PostgreSQL database with lazy detail sync
             </span>
           </div>
         </div>

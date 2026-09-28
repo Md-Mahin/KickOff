@@ -90,6 +90,7 @@ CREATE TABLE Standing (
 
 CREATE TABLE Match (
     MatchID       SERIAL PRIMARY KEY,
+    ApiFixtureID  BIGINT,
     TournamentID  INT NOT NULL REFERENCES Tournament(TournamentID),
     HomeTeamID    INT NOT NULL REFERENCES Team(TeamID),
     AwayTeamID    INT NOT NULL REFERENCES Team(TeamID),
@@ -99,6 +100,8 @@ CREATE TABLE Match (
     AwayGoals     INT DEFAULT 0,
     CHECK (HomeTeamID <> AwayTeamID)
 );
+CREATE UNIQUE INDEX uq_match_api_fixture_id
+    ON Match(ApiFixtureID) WHERE ApiFixtureID IS NOT NULL;
 
 CREATE TABLE MatchOfficiating (
     MatchID       INT NOT NULL REFERENCES Match(MatchID),
@@ -168,6 +171,22 @@ CREATE TABLE Event (
     TeamID        INT REFERENCES Team(TeamID),
     EventTime     INT,
     EventType     VARCHAR(20) NOT NULL CHECK (EventType IN ('Goal','Card','Foul','Substitution'))
+);
+
+-- API quota accounting and negative-result caching prevent repeat API calls
+-- when a fixture has no published events/lineups yet.
+CREATE TABLE ApiFootballDailyUsage (
+    UsageDate DATE PRIMARY KEY DEFAULT CURRENT_DATE,
+    RequestCount INTEGER NOT NULL DEFAULT 0,
+    UpdatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE MatchApiCache (
+    MatchID INTEGER NOT NULL,
+    Endpoint VARCHAR(20) NOT NULL,
+    Payload JSONB NOT NULL DEFAULT '[]'::jsonb,
+    FetchedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (MatchID, Endpoint)
 );
 
 CREATE TABLE Goal (

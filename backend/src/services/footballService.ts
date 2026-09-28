@@ -1,5 +1,6 @@
 import { pool } from "../db";
 import { getCoachForTeam } from "./coachData";
+import { callApiFootball } from "./apiFootballClient";
 
 // ── League priority (lower = bigger / shown first) ───────────────────────────
 const LEAGUE_PRIORITY: Record<string, number> = {
@@ -62,14 +63,6 @@ export function isNationalLeague(name: string): boolean {
 }
 
 // ── API-Football helpers ──────────────────────────────────────────────────────
-const API_BASE = "https://v3.football.api-sports.io";
-
-function apiKey(): string {
-  const key = process.env.API_FOOTBALL_KEY;
-  if (!key || key === "your-api-football-key") throw new Error("API key not configured");
-  return key;
-}
-
 function mapApiItem(item: any) {
   return {
     fixture: {
@@ -94,13 +87,89 @@ function mapApiItem(item: any) {
 }
 
 async function apiFetch(path: string) {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { "x-apisports-key": apiKey() },
-  });
-  if (!res.ok) throw new Error(`API-Football ${path} → ${res.status}`);
-  return ((await res.json()) as { response: any[] }).response;
+  return callApiFootball(path);
 }
 type FixtureItem = ReturnType<typeof mapApiItem>;
+
+export async function upsertApiTournament(league: any): Promise<number> {
+  const name = String(league?.name ?? "Tournament");
+  const edition = String(league?.season ?? new Date().getFullYear());
+  const existing = await pool.query(
+    `SELECT TournamentID FROM Tournament WHERE LOWER(Name) = LOWER($1) AND Edition = $2 ORDER BY TournamentID LIMIT 1`,
+    [name, edition]
+  );
+  if (existing.rows.length) {
+    const id = Number(existing.rows[0].tournamentid);
+    await pool.query(`UPDATE Tournament SET Type = COALESCE(Type, 'Club') WHERE TournamentID = $1`, [id]);
+    return id;
+  }
+  const inserted = await pool.query(
+    `INSERT INTO Tournament (Name, Type, Edition) VALUES ($1, 'Club', $2) RETURNING TournamentID`,
+    [name, edition]
+  );
+  return Number(inserted.rows[0].tournamentid);
+}
+
+export async function upsertApiTeam(team: any, countryId: number | null): Promise<number> {
+  const existing = await pool.query(
+    `SELECT TeamID FROM Team
+     WHERE ($1::text IS NOT NULL AND Logo = $1) OR LOWER(Name) = LOWER($2)
+     ORDER BY CASE WHEN $1::text IS NOT NULL AND Logo = $1 THEN 0 ELSE 1 END, TeamID LIMIT 1`,
+    [team.logo ?? null, String(team.name)]
+  );
+  if (existing.rows.length) {
+    const id = Number(existing.rows[0].teamid);
+    await pool.query(
+      `UPDATE Team SET Logo = COALESCE(Logo, $2), CountryID = COALESCE(CountryID, $3) WHERE TeamID = $1`,
+      [id, team.logo ?? null, countryId]
+    );
+    return id;
+  }
+  const inserted = await pool.query(
+    `INSERT INTO Team (Name, Logo, CountryID) VALUES ($1, $2, $3) RETURNING TeamID`,
+    [String(team.name), team.logo ?? null, countryId]
+  );
+  return Number(inserted.rows[0].teamid);
+}
+
+export async function upsertApiPlayer(player: any): Promise<number | null> {
+  if (!player?.name) return null;
+  // The fixtures/lineups endpoint often omits player.photo. API-Sports serves
+  // player portraits directly by provider ID, so we can persist the URL without
+  // spending another API request on each player's profile.
+  const photo = player.photo ?? (player.id ? `https://media.api-sports.io/football/players/${Number(player.id)}.png` : null);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(0, hashtext(LOWER($1)))", [String(player.name)]);
+    const existing = await client.query(
+      `SELECT PlayerID FROM Player
+       WHERE ($1::text IS NOT NULL AND Photo = $1) OR LOWER(Name) = LOWER($2)
+       ORDER BY CASE WHEN $1::text IS NOT NULL AND Photo = $1 THEN 0 ELSE 1 END, PlayerID LIMIT 1`,
+      [photo, String(player.name)]
+    );
+    if (existing.rows.length) {
+      const id = Number(existing.rows[0].playerid);
+      await client.query(
+        `UPDATE Player SET Position = COALESCE($2, Position), Photo = COALESCE($3, Photo) WHERE PlayerID = $1`,
+        [id, player.pos ?? null, photo]
+      );
+      await client.query("COMMIT");
+      return id;
+    }
+    const inserted = await client.query(
+      `INSERT INTO Player (Name, Position, Photo) VALUES ($1, $2, $3) RETURNING PlayerID`,
+      [String(player.name), player.pos ?? null, photo]
+    );
+    await client.query("COMMIT");
+    return Number(inserted.rows[0].playerid);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 async function fetchByDate(date: string): Promise<FixtureItem[]> {
   const items = await apiFetch(`/fixtures?date=${date}`);
@@ -125,7 +194,8 @@ async function fetchById(id: number) {
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 const BASE_QUERY = `
-  SELECT m.MatchID, m.HomeGoals, m.AwayGoals, m.MatchDate,
+  SELECT COALESCE(m.ApiFixtureID, m.MatchID) AS MatchID, m.MatchID AS DatabaseMatchID,
+    m.HomeGoals, m.AwayGoals, m.MatchDate,
     venue.Name AS VenueName, venue.City AS VenueCity,
     venueCountry.Name AS VenueCountry,
     t.TournamentID, t.Name AS TournamentName,
@@ -157,7 +227,7 @@ function mapDbRow(row: any) {
 
   return {
     fixture: {
-      id: row.matchid,
+      id: Number(row.matchid),
       date: row.matchdate,
       status: { short: status, elapsed },
       venue: venueObj,
@@ -174,7 +244,7 @@ function mapDbRow(row: any) {
 
 // ── DB Sync helpers (Populate DB from API) ───────────────────────────────────
 
-export async function syncFixtureToDb(item: any) {
+async function syncFixtureToDbInternal(item: any) {
   if (!item?.fixture?.id || !item?.teams?.home?.id || !item?.teams?.away?.id) return;
   try {
     const fixtureId = Number(item.fixture.id);
@@ -199,17 +269,8 @@ export async function syncFixtureToDb(item: any) {
       } catch { }
     }
 
-    // 2. Tournament
-    try {
-      await pool.query(
-        `INSERT INTO Tournament (TournamentID, Name, Type, Edition)
-         VALUES ($1, $2, 'Club', $3)
-         ON CONFLICT (TournamentID) DO UPDATE SET
-           Name = EXCLUDED.Name,
-           Edition = COALESCE(EXCLUDED.Edition, Tournament.Edition)`,
-        [league.id, league.name, String(league.season ?? new Date().getFullYear())]
-      );
-    } catch { }
+    // Use local primary keys; API IDs must not overwrite seeded local IDs.
+    const tournamentId = await upsertApiTournament(league);
 
     // 3. Venue
     let venueId: number | null = null;
@@ -233,48 +294,33 @@ export async function syncFixtureToDb(item: any) {
       } catch { }
     }
 
-    // 4. Teams (Home and Away)
-    try {
-      await pool.query(
-        `INSERT INTO Team (TeamID, Name, Logo, CountryID)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (TeamID) DO UPDATE SET
-           Name = EXCLUDED.Name,
-           Logo = COALESCE(EXCLUDED.Logo, Team.Logo)`,
-        [home.id, home.name, home.logo ?? null, countryId]
-      );
-      await pool.query(
-        `INSERT INTO Team (TeamID, Name, Logo, CountryID)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (TeamID) DO UPDATE SET
-           Name = EXCLUDED.Name,
-           Logo = COALESCE(EXCLUDED.Logo, Team.Logo)`,
-        [away.id, away.name, away.logo ?? null, countryId]
-      );
-    } catch { }
+    // Reuse existing local teams by logo/name and preserve their DB TeamIDs.
+    const homeTeamId = await upsertApiTeam(home, countryId);
+    const awayTeamId = await upsertApiTeam(away, countryId);
 
-    // 5. Match
+    // 5. Match. Keep API fixture IDs separate from local database primary keys.
     const matchDate = item.fixture.date ? new Date(item.fixture.date) : new Date();
+    let databaseMatchId: number | null = null;
     try {
-      await pool.query(
-        `INSERT INTO Match (MatchID, TournamentID, HomeTeamID, AwayTeamID, VenueID, MatchDate, HomeGoals, AwayGoals)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (MatchID) DO UPDATE SET
-           HomeGoals = EXCLUDED.HomeGoals,
-           AwayGoals = EXCLUDED.AwayGoals,
-           MatchDate = EXCLUDED.MatchDate,
-           VenueID = COALESCE(EXCLUDED.VenueID, Match.VenueID)`,
-        [
-          fixtureId,
-          league.id,
-          home.id,
-          away.id,
-          venueId,
-          matchDate,
-          goals.home ?? 0,
-          goals.away ?? 0,
-        ]
+      const existingMatch = await pool.query(
+        `SELECT MatchID FROM Match WHERE ApiFixtureID = $1 OR MatchID = $1 LIMIT 1`, [fixtureId]
       );
+      if (existingMatch.rows.length) {
+        databaseMatchId = Number(existingMatch.rows[0].matchid);
+        await pool.query(
+          `UPDATE Match SET ApiFixtureID = $2, TournamentID = $3, HomeTeamID = $4, AwayTeamID = $5,
+             VenueID = COALESCE($6, VenueID), MatchDate = $7, HomeGoals = $8, AwayGoals = $9
+           WHERE MatchID = $1`,
+          [databaseMatchId, fixtureId, tournamentId, homeTeamId, awayTeamId, venueId, matchDate, goals.home ?? 0, goals.away ?? 0]
+        );
+      } else {
+        const insertedMatch = await pool.query(
+          `INSERT INTO Match (ApiFixtureID, TournamentID, HomeTeamID, AwayTeamID, VenueID, MatchDate, HomeGoals, AwayGoals)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING MatchID`,
+          [fixtureId, tournamentId, homeTeamId, awayTeamId, venueId, matchDate, goals.home ?? 0, goals.away ?? 0]
+        );
+        databaseMatchId = Number(insertedMatch.rows[0].matchid);
+      }
     } catch (mErr) {
       console.warn("sync Match error:", (mErr as Error).message);
     }
@@ -282,7 +328,7 @@ export async function syncFixtureToDb(item: any) {
     // 6. Referee & MatchOfficiating
     if (refereeStr && typeof refereeStr === "string") {
       const refName = refereeStr.split(",")[0].trim();
-      if (refName) {
+      if (refName && databaseMatchId) {
         try {
           let refId: number | null = null;
           const refCheck = await pool.query(
@@ -306,7 +352,7 @@ export async function syncFixtureToDb(item: any) {
               `INSERT INTO MatchOfficiating (MatchID, RefereeID, Role, Status)
                VALUES ($1, $2, 'Main', 'Confirmed')
                ON CONFLICT (MatchID, RefereeID, Role) DO NOTHING`,
-              [fixtureId, refId]
+              [databaseMatchId, refId]
             );
           }
         } catch { }
@@ -315,6 +361,17 @@ export async function syncFixtureToDb(item: any) {
   } catch (err) {
     console.warn("syncFixtureToDb error:", (err as Error).message);
   }
+}
+
+const fixtureSyncInFlight = new Map<number, Promise<void>>();
+export function syncFixtureToDb(item: any) {
+  const fixtureId = Number(item?.fixture?.id);
+  if (!fixtureId) return Promise.resolve();
+  const existing = fixtureSyncInFlight.get(fixtureId);
+  if (existing) return existing;
+  const sync = syncFixtureToDbInternal(item).finally(() => fixtureSyncInFlight.delete(fixtureId));
+  fixtureSyncInFlight.set(fixtureId, sync);
+  return sync;
 }
 
 export async function syncLineupsToDb(
@@ -345,11 +402,10 @@ export async function syncLineupsToDb(
         `
         SELECT TeamID
         FROM Team
-        WHERE TeamID = $1
-           OR ApiTeamID = $1
+        WHERE LOWER(Name) = LOWER($1)
         LIMIT 1
         `,
-        [teamApiId]
+        [String(item.team?.name ?? "")]
       );
 
       if (teamResult.rows.length === 0) {
@@ -409,31 +465,8 @@ export async function syncLineupsToDb(
           return;
         }
 
-        const playerId = Number(player.id);
-
-        await pool.query(
-          `
-          INSERT INTO Player
-          (
-            PlayerID,
-            Name,
-            Position,
-            Photo
-          )
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT (PlayerID)
-          DO UPDATE SET
-            Name = EXCLUDED.Name,
-            Position = COALESCE(EXCLUDED.Position, Player.Position),
-            Photo = COALESCE(EXCLUDED.Photo, Player.Photo)
-          `,
-          [
-            playerId,
-            player.name,
-            player.pos ?? null,
-            player.photo ?? null,
-          ]
-        );
+        const playerId = await upsertApiPlayer(player);
+        if (!playerId) return;
 
         await pool.query(
           `
@@ -641,36 +674,18 @@ export async function seedDefaultLineupForMatch(matchId: number, homeTeamId: num
 }
 
 // ── Hardcoded fallback ────────────────────────────────────────────────────────
-const FALLBACK = [
-  { fixture: { id: 991, status: { short: "LIVE", elapsed: 45 } }, league: { id: 4, name: "UEFA Champions League", country: "International" }, teams: { home: { id: 1, name: "Arsenal", logo: null }, away: { id: 2, name: "Real Madrid", logo: null } }, goals: { home: 1, away: 0 } },
-  { fixture: { id: 992, status: { short: "UPCOMING", elapsed: null } }, league: { id: 4, name: "UEFA Champions League", country: "International" }, teams: { home: { id: 3, name: "Bayern Munich", logo: null }, away: { id: 4, name: "PSG", logo: null } }, goals: { home: 0, away: 0 } },
-  { fixture: { id: 993, status: { short: "FT", elapsed: 90 } }, league: { id: 7, name: "Premier League", country: "England" }, teams: { home: { id: 5, name: "Manchester City", logo: null }, away: { id: 6, name: "Liverpool", logo: null } }, goals: { home: 2, away: 1 } },
-];
+
 
 // ── High performance memory caches ─────────────────────────────────────────────
 let cachedFixtures: { data: any; expiresAt: number } | null = null;
 let cachedPopular: { data: any; expiresAt: number } | null = null;
-let lastApiSyncTime = 0;
-
 const todayStr = () => new Date().toISOString().split("T")[0];
 
-/** Trigger non-blocking background sync from API-Football once every 15 minutes */
-function triggerBackgroundSync() {
-  const now = Date.now();
-  if (now - lastApiSyncTime < 15 * 60 * 1000) return; // Sync at most once every 15 mins
-  lastApiSyncTime = now;
-
-  // Run in background without blocking the HTTP response
-  setTimeout(async () => {
-    try {
-      const rawItems = await apiFetch(`/fixtures?date=${todayStr()}`);
-      if (Array.isArray(rawItems) && rawItems.length > 0) {
-        for (const item of rawItems) {
-          syncFixtureToDb(item).catch(() => {});
-        }
-      }
-    } catch {}
-  }, 100);
+async function markFixtureListSync(unavailable = false) {
+  await pool.query(`INSERT INTO MatchApiCache (MatchID, Endpoint, Payload, FetchedAt)
+    VALUES (0, 'fixtures', $1::jsonb, CURRENT_TIMESTAMP)
+    ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`,
+    [JSON.stringify({ unavailable })]);
 }
 
 // ── Public service functions ──────────────────────────────────────────────────
@@ -681,39 +696,71 @@ export async function getFixtures() {
     return cachedFixtures.data;
   }
 
-  // 1. Read from PostgreSQL DB first for instant response
+  // 1. Read from PostgreSQL DB first; refresh the fixture list at most once per three hours.
+  let databaseRows: any[] = [];
   try {
-    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC`);
+    const { rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NOT NULL ORDER BY m.MatchDate DESC`);
+    databaseRows = rows;
     if (rows.length > 0) {
-      const result = { response: sortByLeague(rows.map(mapDbRow)) };
-      cachedFixtures = { data: result, expiresAt: now + 15000 }; // 15s cache
-      triggerBackgroundSync();
-      return result;
-    }
-  } catch (e) {
-    console.warn("DB getFixtures query:", (e as Error).message);
-  }
-
-  // 2. Fallback to API sync only if DB was completely empty
-  try {
-    const rawItems = await apiFetch(`/fixtures?date=${todayStr()}`);
-    if (Array.isArray(rawItems) && rawItems.length > 0) {
-      for (const item of rawItems) {
-        await syncFixtureToDb(item).catch(() => {});
-      }
-      const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC`);
-      if (rows.length > 0) {
+      const cache = await pool.query(`SELECT Payload, FetchedAt FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = 'fixtures'`);
+      const age = cache.rows[0] ? now - new Date(cache.rows[0].fetchedat).getTime() : Infinity;
+      const unavailable = Boolean(cache.rows[0]?.payload?.unavailable);
+      if (age < (unavailable ? 5 * 60_000 : 3 * 60 * 60_000)) {
         const result = { response: sortByLeague(rows.map(mapDbRow)) };
         cachedFixtures = { data: result, expiresAt: now + 15000 };
         return result;
       }
     }
   } catch (e) {
+    console.warn("DB getFixtures query:", (e as Error).message);
+  }
+
+  // 2. Refresh through the shared quota/cooldown client when data is stale or missing.
+  let apiUnavailable = false;
+  try {
+    const cache = await pool.query(`SELECT Payload, FetchedAt FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = 'fixtures'`);
+    const age = cache.rows[0] ? now - new Date(cache.rows[0].fetchedat).getTime() : Infinity;
+    const unavailable = Boolean(cache.rows[0]?.payload?.unavailable);
+    if (age < (unavailable ? 5 * 60_000 : 3 * 60 * 60_000)) {
+      if (databaseRows.length) return { response: sortByLeague(databaseRows.map(mapDbRow)) };
+      if (unavailable) apiUnavailable = true;
+      else return { response: [] };
+    }
+  } catch { }
+  try {
+    if (apiUnavailable) throw new Error("API-Football cooldown is active");
+    const rawItems = await apiFetch(`/fixtures?date=${todayStr()}`);
+    if (Array.isArray(rawItems) && rawItems.length > 0) {
+      for (const item of rawItems) {
+        await syncFixtureToDb(item).catch(() => {});
+      }
+      await markFixtureListSync();
+      const { rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NOT NULL ORDER BY m.MatchDate DESC`);
+      if (rows.length > 0) {
+        const result = { response: sortByLeague(rows.map(mapDbRow)) };
+        cachedFixtures = { data: result, expiresAt: now + 15000 };
+        return result;
+      }
+    } else if (Array.isArray(rawItems)) {
+      await markFixtureListSync();
+      if (databaseRows.length) return { response: sortByLeague(databaseRows.map(mapDbRow)) };
+    }
+  } catch (e) {
+    apiUnavailable = true;
+    await markFixtureListSync(true).catch(() => {});
     console.warn("API getFixtures fetch/sync:", (e as Error).message);
   }
 
-  // 3. Hardcoded fallback
-  return { response: FALLBACK };
+  if (databaseRows.length) return { response: sortByLeague(databaseRows.map(mapDbRow)) };
+
+  if (apiUnavailable) {
+    try {
+      const { rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NULL ORDER BY m.MatchDate DESC`);
+      if (rows.length) return { response: sortByLeague(rows.map(mapDbRow)), _source: "Mock Fallback" };
+    } catch { }
+  }
+
+  return { response: [] };
 }
 
 /** Top matches sorted by league tier (biggest leagues first). */
@@ -724,7 +771,11 @@ export async function getPopularFixtures() {
   }
 
   try {
-    const { rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC LIMIT 12`);
+    let { rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NOT NULL ORDER BY m.MatchDate DESC LIMIT 12`);
+    if (rows.length === 0) {
+      await getFixtures();
+      ({ rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NOT NULL ORDER BY m.MatchDate DESC LIMIT 12`));
+    }
     if (rows.length > 0) {
       const result = { response: sortByLeague(rows.map(mapDbRow)) };
       cachedPopular = { data: result, expiresAt: now + 15000 };
@@ -733,12 +784,14 @@ export async function getPopularFixtures() {
   } catch (e) {
     console.warn("DB getPopularFixtures query:", (e as Error).message);
   }
-  return { response: FALLBACK };
+  return { response: [] };
 }
 
 /** Matches involving teams the user follows (requires DB). */
 export async function getFavouriteFixtures(userId: number) {
   try {
+    const externalData = await pool.query(`SELECT EXISTS (SELECT 1 FROM Match WHERE ApiFixtureID IS NOT NULL) AS present`);
+    const matchFilter = externalData.rows[0]?.present ? " WHERE m.ApiFixtureID IS NOT NULL" : "";
     const { rows: teamRows } = await pool.query(
       `SELECT TeamID
        FROM UserFollowsTeam
@@ -763,7 +816,7 @@ export async function getFavouriteFixtures(userId: number) {
 
     if (teamIds.size === 0 && playerIds.size === 0) {
       const { rows } = await pool.query(
-        `${BASE_QUERY} ORDER BY m.MatchDate DESC`
+        `${BASE_QUERY}${matchFilter} ORDER BY m.MatchDate DESC`
       );
 
       return {
@@ -784,7 +837,7 @@ export async function getFavouriteFixtures(userId: number) {
     );
 
     const { rows } = await pool.query(
-      `${BASE_QUERY} ORDER BY m.MatchDate DESC`
+      `${BASE_QUERY}${matchFilter} ORDER BY m.MatchDate DESC`
     );
 
     const allMatches = rows.map(mapDbRow);
@@ -839,7 +892,7 @@ export async function getFavouriteFixtures(userId: number) {
 export async function getMatchById(id: number) {
   try {
     // 1. Check if match is in DB
-    let { rows } = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1`, [id]);
+    let { rows } = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1 OR m.ApiFixtureID = $1`, [id]);
 
     // 2. If not in DB, fetch from API and sync to DB!
     if (rows.length === 0) {
@@ -847,7 +900,7 @@ export async function getMatchById(id: number) {
         const raw = await fetchById(id);
         if (raw) {
           await syncFixtureToDb(raw);
-          const dbRes = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1`, [id]);
+          const dbRes = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1 OR m.ApiFixtureID = $1`, [id]);
           rows = dbRes.rows;
         }
       } catch (e) {
@@ -864,7 +917,7 @@ export async function getMatchById(id: number) {
          FROM MatchOfficiating mo
          JOIN Referee r ON mo.RefereeID = r.RefereeID
          WHERE mo.MatchID = $1`,
-        [id]
+        [rows[0].databasematchid]
       );
       matchObj.referees = refResult.rows.map((r: any) => r.name);
       return matchObj;
@@ -873,8 +926,7 @@ export async function getMatchById(id: number) {
     console.warn("DB getMatchById:", (e as Error).message);
   }
 
-  // Fallback
-  return FALLBACK.find(m => m.fixture.id === id) ?? null;
+  return null;
 }
 
 function applyEventLifecycleFilter(events: any[], matchDate: Date | null) {
@@ -1059,10 +1111,12 @@ export async function seedDefaultEventsForMatch(fixtureId: number) {
 
 export async function getMatchEvents(fixtureId: number) {
   let matchDate: Date | null = null;
+  let apiFixtureId: number | null = null;
   try {
-    const mRes = await pool.query(`SELECT MatchDate FROM Match WHERE MatchID = $1`, [fixtureId]);
+    const mRes = await pool.query(`SELECT MatchDate, ApiFixtureID FROM Match WHERE MatchID = $1 OR ApiFixtureID = $1`, [fixtureId]);
     if (mRes.rows.length > 0 && mRes.rows[0].matchdate) {
       matchDate = new Date(mRes.rows[0].matchdate);
+      apiFixtureId = mRes.rows[0].apifixtureid == null ? null : Number(mRes.rows[0].apifixtureid);
     }
   } catch { }
 
@@ -1070,7 +1124,7 @@ export async function getMatchEvents(fixtureId: number) {
   if (matchDate) {
     const mins = Math.floor((Date.now() - matchDate.getTime()) / 60000);
     if (mins < 0) {
-      const gRes = await pool.query(`SELECT HomeGoals, AwayGoals FROM Match WHERE MatchID = $1`, [fixtureId]);
+      const gRes = await pool.query(`SELECT HomeGoals, AwayGoals FROM Match WHERE MatchID = $1 OR ApiFixtureID = $1`, [fixtureId]);
       const hg = Number(gRes.rows[0]?.homegoals ?? 0);
       const ag = Number(gRes.rows[0]?.awaygoals ?? 0);
       if (hg === 0 && ag === 0) {
@@ -1082,7 +1136,7 @@ export async function getMatchEvents(fixtureId: number) {
   // The timeline belongs to the selected fixture, so fetch it only from the
   // detail request instead of depending on a pre-synced local match row.
   try {
-    const apiEvents = await fetchEvents(fixtureId)
+    const apiEvents = apiFixtureId == null ? [] : await fetchEvents(apiFixtureId)
 
     const mapped = apiEvents
       .map((event: any, index: number) => {
@@ -1129,8 +1183,6 @@ export async function getMatchEvents(fixtureId: number) {
   }
 
   // Ensure default events exist for matches after kickoff
-  await seedDefaultEventsForMatch(fixtureId);
-
   // Keep locally synced events available when API-Football is unavailable.
   try {
     const { rows } = await pool.query(
@@ -1156,7 +1208,7 @@ export async function getMatchEvents(fixtureId: number) {
       LEFT JOIN Card c ON e.EventID = c.EventID
       LEFT JOIN Substitution sub ON e.EventID = sub.EventID
       LEFT JOIN Player subp ON sub.InPlayerID = subp.PlayerID
-      WHERE m.MatchID = $1
+      WHERE m.MatchID = $1 OR m.ApiFixtureID = $1
       ORDER BY e.EventTime ASC
       `,
       [fixtureId]
@@ -1188,9 +1240,9 @@ export async function getMatchLineups(fixtureId: number) {
     // ============================================================
 
     let matchRes = await pool.query(
-      `SELECT MatchID, HomeTeamID, AwayTeamID
+      `SELECT MatchID, ApiFixtureID, HomeTeamID, AwayTeamID
    FROM Match
-   WHERE MatchID = $1
+   WHERE MatchID = $1 OR ApiFixtureID = $1
    LIMIT 1`,
       [fixtureId]
     );
@@ -1204,9 +1256,9 @@ export async function getMatchLineups(fixtureId: number) {
           await syncFixtureToDb(raw);
 
           matchRes = await pool.query(
-            `SELECT MatchID, HomeTeamID, AwayTeamID
+            `SELECT MatchID, ApiFixtureID, HomeTeamID, AwayTeamID
    FROM Match
-   WHERE MatchID = $1
+   WHERE MatchID = $1 OR ApiFixtureID = $1
    LIMIT 1`,
             [fixtureId]
           );
@@ -1227,7 +1279,7 @@ export async function getMatchLineups(fixtureId: number) {
 
     const matchId = Number(matchRow.matchid);
 
-    const apiFixtureId = fixtureId;
+    const apiFixtureId = matchRow.apifixtureid == null ? null : Number(matchRow.apifixtureid);
 
     // ============================================================
     // 2. Try to get fresh API-Football lineup data
@@ -1432,10 +1484,6 @@ export async function getMatchLineups(fixtureId: number) {
         if (tRow?.coachname) {
           coachName = tRow.coachname;
           coachPhoto = tRow.coachphoto;
-        } else {
-          const fallback = getCoachForTeam(teamId, tRow?.name);
-          coachName = fallback.name;
-          coachPhoto = fallback.photo;
         }
 
         // Cache into TeamMatchCoach
@@ -1600,7 +1648,7 @@ export async function syncMatchEvents(fixtureId: number) {
     `
     SELECT MatchID
     FROM Match
-    WHERE ApiFixtureID = $1
+    WHERE ApiFixtureID = $1 OR MatchID = $1
     `,
     [fixtureId]
   );
@@ -1613,17 +1661,16 @@ export async function syncMatchEvents(fixtureId: number) {
 
   for (const event of events) {
     const elapsed = event.time?.elapsed ?? null;
-    const teamApiId = event.team?.id ?? null;
-    const playerApiId = event.player?.id ?? null;
-    const assistApiId = event.assist?.id ?? null;
+    const teamName = event.team?.name ?? null;
 
-    let eventType: "Goal" | "Card" | "Foul" | null = null;
+    let eventType: "Goal" | "Card" | "Foul" | "Substitution" | null = null;
 
     const type = event.type?.toLowerCase();
 
     if (type === "goal") eventType = "Goal";
     else if (type === "card") eventType = "Card";
     else if (type === "foul") eventType = "Foul";
+    else if (type === "subst") eventType = "Substitution";
 
     if (!eventType) continue;
 
@@ -1631,29 +1678,15 @@ export async function syncMatchEvents(fixtureId: number) {
       `
       SELECT TeamID
       FROM Team
-      WHERE ApiTeamID = $1
+      WHERE LOWER(Name) = LOWER($1)
       `,
-      [teamApiId]
+      [teamName]
     );
 
     const teamId =
       teamResult.rows.length > 0 ? teamResult.rows[0].teamid : null;
 
-    const playerResult = playerApiId
-      ? await pool.query(
-        `
-          SELECT PlayerID
-          FROM Player
-          WHERE ApiPlayerID = $1
-          `,
-        [playerApiId]
-      )
-      : { rows: [] };
-
-    const playerId =
-      playerResult.rows.length > 0
-        ? playerResult.rows[0].playerid
-        : null;
+    const playerId = event.player?.id && event.player?.name ? await upsertApiPlayer(event.player) : null;
 
     const existingEvent = await pool.query(
       `
@@ -1693,21 +1726,7 @@ export async function syncMatchEvents(fixtureId: number) {
     }
 
     if (eventType === "Goal") {
-      const assistResult = assistApiId
-        ? await pool.query(
-          `
-            SELECT PlayerID
-            FROM Player
-            WHERE ApiPlayerID = $1
-            `,
-          [assistApiId]
-        )
-        : { rows: [] };
-
-      const assistPlayerId =
-        assistResult.rows.length > 0
-          ? assistResult.rows[0].playerid
-          : null;
+      const assistPlayerId = event.assist?.id && event.assist?.name ? await upsertApiPlayer(event.assist) : null;
 
       await pool.query(
         `
@@ -1744,6 +1763,17 @@ export async function syncMatchEvents(fixtureId: number) {
           DO UPDATE SET CardType = EXCLUDED.CardType
           `,
           [eventId, cardType]
+        );
+      }
+    }
+
+    if (eventType === "Substitution" && event.assist?.id && event.assist?.name) {
+      const inPlayerId = await upsertApiPlayer(event.assist);
+      if (inPlayerId) {
+        await pool.query(
+          `INSERT INTO Substitution (EventID, InPlayerID) VALUES ($1, $2)
+           ON CONFLICT (EventID) DO UPDATE SET InPlayerID = EXCLUDED.InPlayerID`,
+          [eventId, inPlayerId]
         );
       }
     }

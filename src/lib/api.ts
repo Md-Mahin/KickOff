@@ -596,7 +596,7 @@ export type BasicMatchItem = {
 }
 
 export type BasicMatchesResult = {
-  source: "API-Football" | "Mock Fallback"
+  source: "Database" | "API-Football" | "Mock Fallback"
   matches: BasicMatchItem[]
 }
 

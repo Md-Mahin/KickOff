@@ -41,8 +41,8 @@ export interface DetailedMockMatch {
     team: { id: number; name: string; logo: string | null };
     coach: { id: number; name: string; photo: string | null };
     formation: string;
-    startXI: Array<{ player: { id: number; name: string; number: number; pos: string } }>;
-    substitutes: Array<{ player: { id: number; name: string; number: number; pos: string } }>;
+    startXI: Array<{ player: { id: number; name: string; number: number; pos: string; photo?: string | null } }>;
+    substitutes: Array<{ player: { id: number; name: string; number: number; pos: string; photo?: string | null } }>;
   }>;
   events: Array<{
     time: { elapsed: number };
