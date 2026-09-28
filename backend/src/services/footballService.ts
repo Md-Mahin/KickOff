@@ -656,21 +656,7 @@ const todayStr = () => new Date().toISOString().split("T")[0];
 
 /** Trigger non-blocking background sync from API-Football once every 15 minutes */
 function triggerBackgroundSync() {
-  const now = Date.now();
-  if (now - lastApiSyncTime < 15 * 60 * 1000) return; // Sync at most once every 15 mins
-  lastApiSyncTime = now;
-
-  // Run in background without blocking the HTTP response
-  setTimeout(async () => {
-    try {
-      const rawItems = await apiFetch(`/fixtures?date=${todayStr()}`);
-      if (Array.isArray(rawItems) && rawItems.length > 0) {
-        for (const item of rawItems) {
-          syncFixtureToDb(item).catch(() => {});
-        }
-      }
-    } catch {}
-  }, 100);
+  // Disabled background API sync to keep mock/database data as primary source
 }
 
 // ── Public service functions ──────────────────────────────────────────────────
@@ -841,18 +827,10 @@ export async function getMatchById(id: number) {
     // 1. Check if match is in DB
     let { rows } = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1`, [id]);
 
-    // 2. If not in DB, fetch from API and sync to DB!
+    // 2. If not in DB, check fallback mock fixtures
     if (rows.length === 0) {
-      try {
-        const raw = await fetchById(id);
-        if (raw) {
-          await syncFixtureToDb(raw);
-          const dbRes = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1`, [id]);
-          rows = dbRes.rows;
-        }
-      } catch (e) {
-        console.warn("API fetch in getMatchById:", (e as Error).message);
-      }
+      const fallback = FALLBACK.find((m) => m.fixture.id === id);
+      if (fallback) return fallback;
     }
 
     if (rows.length > 0) {
@@ -1394,6 +1372,13 @@ export async function getMatchLineups(fixtureId: number) {
             WHEN l.Status = 'Starter' THEN 0
             ELSE 1
           END,
+          CASE
+            WHEN UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'G%' THEN 1
+            WHEN UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'D%' THEN 2
+            WHEN UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'M%' THEN 3
+            WHEN UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'F%' OR UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'A%' THEN 4
+            ELSE 5
+          END ASC,
           l.JerseyNumber NULLS LAST,
           p.Name
         `,

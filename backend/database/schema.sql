@@ -30,6 +30,7 @@ CREATE TABLE Team (
     Logo          TEXT,
     CoachName     VARCHAR(255),
     CoachPhoto    TEXT,
+    Type          VARCHAR(20) DEFAULT 'club',
     ClubID        INT REFERENCES Club(ClubID),
     CountryID     INT REFERENCES Country(CountryID),
     FederationID  INT REFERENCES Federation(FederationID)
@@ -335,6 +336,33 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_lineup_team_check
 BEFORE INSERT OR UPDATE ON Lineup
 FOR EACH ROW EXECUTE FUNCTION check_lineup_team_in_match();
+
+-- ============================================================================
+-- TRIGGER: trg_match_club_country_check
+-- Strictly enforces that club teams only play clubs and national teams only
+-- play national teams. A matchup between a club and national team is forbidden.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION fn_check_match_team_types()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_home_type VARCHAR(20);
+    v_away_type VARCHAR(20);
+BEGIN
+    SELECT COALESCE(Type, 'club') INTO v_home_type FROM Team WHERE TeamID = NEW.HomeTeamID;
+    SELECT COALESCE(Type, 'club') INTO v_away_type FROM Team WHERE TeamID = NEW.AwayTeamID;
+
+    IF v_home_type IS NOT NULL AND v_away_type IS NOT NULL AND v_home_type != v_away_type THEN
+        RAISE EXCEPTION 'Forbidden: Club teams cannot play national teams (Home %: %, Away %: %)',
+            NEW.HomeTeamID, v_home_type, NEW.AwayTeamID, v_away_type;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_match_club_country_check ON Match;
+CREATE TRIGGER trg_match_club_country_check
+BEFORE INSERT OR UPDATE ON Match
+FOR EACH ROW EXECUTE FUNCTION fn_check_match_team_types();
 
 CREATE UNIQUE INDEX idx_tph_one_current_per_player
     ON TeamPlayerHistory(PlayerID)
@@ -735,5 +763,273 @@ BEGIN
 
 END;
 $$;
+
+-- ============================================================================
+-- Shadow Tables for Sensitive Action Auditing
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS PlayerTransferAudit (
+    AuditID SERIAL PRIMARY KEY,
+    PlayerID INT NOT NULL REFERENCES Player(PlayerID) ON DELETE CASCADE,
+    OldTeamID INT REFERENCES Team(TeamID) ON DELETE SET NULL,
+    NewTeamID INT REFERENCES Team(TeamID) ON DELETE SET NULL,
+    TransferDate DATE NOT NULL DEFAULT CURRENT_DATE,
+    TransferType VARCHAR(50),
+    Action VARCHAR(20) NOT NULL,
+    ChangedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_transfer_audit_player ON PlayerTransferAudit(PlayerID);
+
+CREATE TABLE IF NOT EXISTS SecurityAuditLog (
+    AuditID SERIAL PRIMARY KEY,
+    UserID INT NOT NULL REFERENCES Users(UserID) ON DELETE CASCADE,
+    Action VARCHAR(50) NOT NULL,
+    OldRole VARCHAR(20),
+    NewRole VARCHAR(20),
+    ChangedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_security_audit_user ON SecurityAuditLog(UserID);
+
+-- ============================================================================
+-- Triggers: Transfer Sync & Security Shadow Audits
+-- ============================================================================
+CREATE OR REPLACE FUNCTION trg_fn_sync_player_transfer() RETURNS TRIGGER AS $$
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+        IF NEW.EndDate IS NULL THEN
+            UPDATE TeamPlayerHistory
+            SET EndDate = NEW.BeginDate
+            WHERE PlayerID = NEW.PlayerID
+              AND HistoryID <> NEW.HistoryID
+              AND EndDate IS NULL;
+        END IF;
+
+        INSERT INTO PlayerTransferAudit (PlayerID, OldTeamID, NewTeamID, TransferDate, TransferType, Action)
+        VALUES (
+            NEW.PlayerID,
+            (SELECT TeamID FROM TeamPlayerHistory WHERE PlayerID = NEW.PlayerID AND HistoryID <> NEW.HistoryID ORDER BY BeginDate DESC LIMIT 1),
+            NEW.TeamID,
+            NEW.BeginDate,
+            NEW.Type,
+            'INSERT'
+        );
+        RETURN NEW;
+    ELSIF (TG_OP = 'UPDATE') THEN
+        IF (OLD.TeamID <> NEW.TeamID OR (OLD.EndDate IS NULL AND NEW.EndDate IS NOT NULL)) THEN
+            INSERT INTO PlayerTransferAudit (PlayerID, OldTeamID, NewTeamID, TransferDate, TransferType, Action)
+            VALUES (NEW.PlayerID, OLD.TeamID, NEW.TeamID, COALESCE(NEW.BeginDate, CURRENT_DATE), NEW.Type, 'UPDATE');
+        END IF;
+        RETURN NEW;
+    END IF;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_player_transfer_sync ON TeamPlayerHistory;
+CREATE TRIGGER trg_player_transfer_sync
+AFTER INSERT OR UPDATE ON TeamPlayerHistory
+FOR EACH ROW EXECUTE FUNCTION trg_fn_sync_player_transfer();
+
+CREATE OR REPLACE FUNCTION trg_fn_user_security_audit() RETURNS TRIGGER AS $$
+BEGIN
+    IF (OLD.Role IS DISTINCT FROM NEW.Role) THEN
+        INSERT INTO SecurityAuditLog (UserID, Action, OldRole, NewRole)
+        VALUES (NEW.UserID, 'ROLE_CHANGE', OLD.Role, NEW.Role);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_user_security_audit ON Users;
+CREATE TRIGGER trg_user_security_audit
+AFTER UPDATE ON Users
+FOR EACH ROW EXECUTE FUNCTION trg_fn_user_security_audit();
+
+-- ============================================================================
+-- Functions: Statistical & Computed Values
+-- ============================================================================
+
+-- Function 1: Compute statistical performance rating for a player (0 - 10 scale)
+CREATE OR REPLACE FUNCTION fn_calculate_player_rating(p_player_id INT)
+RETURNS NUMERIC(4, 2) AS $$
+DECLARE
+    v_pos VARCHAR(10);
+    v_mins INT;
+    v_goals INT;
+    v_assists INT;
+    v_shots INT;
+    v_keypasses INT;
+    v_passes INT;
+    v_tackles INT;
+    v_interceptions INT;
+    v_clearances INT;
+    v_saves INT;
+    v_cleansheets INT;
+    v_yellows INT;
+    v_reds INT;
+    v_conceded INT;
+    v_card_penalty NUMERIC;
+    v_confidence NUMERIC;
+    v_base_score NUMERIC;
+    v_final_rating NUMERIC(4, 2);
+BEGIN
+    SELECT
+        COALESCE(p.Position, 'M'),
+        COALESCE(SUM(pms.MinutesPlayed), 0),
+        COALESCE(SUM(pms.Goals), 0),
+        COALESCE(SUM(pms.Assists), 0),
+        COALESCE(SUM(pms.ShotsOnTarget), 0),
+        COALESCE(SUM(pms.KeyPasses), 0),
+        COALESCE(SUM(pms.Passes), 0),
+        COALESCE(SUM(pms.Tackles), 0),
+        COALESCE(SUM(pms.Interceptions), 0),
+        COALESCE(SUM(pms.Clearances), 0),
+        COALESCE(SUM(pms.Saves), 0),
+        COALESCE(SUM(pms.CleanSheet), 0),
+        COALESCE(SUM(pms.YellowCards), 0),
+        COALESCE(SUM(pms.RedCards), 0),
+        COALESCE(SUM(pms.GoalsConceded), 0)
+    INTO
+        v_pos, v_mins, v_goals, v_assists, v_shots, v_keypasses, v_passes,
+        v_tackles, v_interceptions, v_clearances, v_saves, v_cleansheets,
+        v_yellows, v_reds, v_conceded
+    FROM Player p
+    LEFT JOIN PlayerMatchStat pms ON p.PlayerID = pms.PlayerID
+    WHERE p.PlayerID = p_player_id
+    GROUP BY p.PlayerID, p.Position;
+
+    IF NOT FOUND OR v_mins = 0 THEN
+        RETURN NULL;
+    END IF;
+
+    v_pos := UPPER(v_pos);
+    v_card_penalty := (v_yellows * 0.15) + (v_reds * 0.80);
+    v_confidence := LEAST(1.0, v_mins::numeric / 270.0);
+
+    IF v_pos IN ('F', 'FORWARD', 'FWD') THEN
+        v_base_score := 5.50 + 4.50 * (
+            0.40 * LEAST(1.0, v_goals::numeric / 5.0) +
+            0.20 * LEAST(1.0, v_assists::numeric / 4.0) +
+            0.10 * LEAST(1.0, v_shots::numeric / 10.0) +
+            0.10 * LEAST(1.0, v_keypasses::numeric / 8.0) +
+            0.10 * LEAST(1.0, v_passes::numeric / 120.0) +
+            0.10 * LEAST(1.0, v_mins::numeric / 450.0)
+        );
+    ELSIF v_pos IN ('M', 'MIDFIELDER', 'MID') THEN
+        v_base_score := 5.50 + 4.50 * (
+            0.20 * LEAST(1.0, v_goals::numeric / 3.0) +
+            0.20 * LEAST(1.0, v_assists::numeric / 4.0) +
+            0.20 * LEAST(1.0, v_keypasses::numeric / 10.0) +
+            0.15 * LEAST(1.0, v_passes::numeric / 180.0) +
+            0.15 * LEAST(1.0, v_tackles::numeric / 10.0) +
+            0.10 * LEAST(1.0, v_mins::numeric / 450.0)
+        );
+    ELSIF v_pos IN ('D', 'DEFENDER', 'DEF') THEN
+        v_base_score := 5.50 + 4.50 * (
+            0.20 * LEAST(1.0, v_tackles::numeric / 12.0) +
+            0.20 * LEAST(1.0, v_interceptions::numeric / 10.0) +
+            0.20 * LEAST(1.0, v_clearances::numeric / 15.0) +
+            0.20 * LEAST(1.0, v_cleansheets::numeric / 3.0) +
+            0.10 * LEAST(1.0, v_passes::numeric / 150.0) +
+            0.10 * LEAST(1.0, v_mins::numeric / 450.0)
+        );
+    ELSIF v_pos IN ('G', 'GK', 'GOALKEEPER') THEN
+        v_base_score := 5.50 + 4.50 * (
+            0.30 * LEAST(1.0, v_saves::numeric / 15.0) +
+            0.30 * LEAST(1.0, v_cleansheets::numeric / 3.0) +
+            0.20 * COALESCE(v_saves::numeric / NULLIF(v_saves + v_conceded, 0), 0.65) +
+            0.10 * GREATEST(0.0, 1.0 - (v_conceded::numeric * 90.0 / NULLIF(v_mins, 0)) / 3.0) +
+            0.10 * LEAST(1.0, v_mins::numeric / 450.0)
+        );
+    ELSE
+        v_base_score := 5.50;
+    END IF;
+
+    v_final_rating := LEAST(10.00, GREATEST(1.00, ROUND(
+        ((v_base_score - v_card_penalty) * v_confidence) + (5.50 * (1.0 - v_confidence)),
+        2
+    )));
+
+    RETURN v_final_rating;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function 2: Compute statistical win ratio for a team
+CREATE OR REPLACE FUNCTION fn_get_team_win_ratio(p_team_id INT, p_tournament_id INT DEFAULT NULL)
+RETURNS NUMERIC(5, 2) AS $$
+DECLARE
+    v_total_matches INT;
+    v_wins INT;
+BEGIN
+    SELECT
+        COUNT(*),
+        COALESCE(SUM(CASE
+            WHEN (HomeTeamID = p_team_id AND HomeGoals > AwayGoals) OR
+                 (AwayTeamID = p_team_id AND AwayGoals > HomeGoals) THEN 1
+            ELSE 0
+        END), 0)
+    INTO v_total_matches, v_wins
+    FROM Match
+    WHERE (HomeTeamID = p_team_id OR AwayTeamID = p_team_id)
+      AND (p_tournament_id IS NULL OR TournamentID = p_tournament_id)
+      AND HomeGoals IS NOT NULL AND AwayGoals IS NOT NULL;
+
+    IF v_total_matches = 0 THEN
+        RETURN 0.00;
+    END IF;
+
+    RETURN ROUND((v_wins::numeric / v_total_matches::numeric) * 100.0, 2);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Function 3: Compute player recent form (average rating over last N matches)
+CREATE OR REPLACE FUNCTION fn_get_player_form(p_player_id INT, p_last_n INT DEFAULT 5)
+RETURNS NUMERIC(4, 2) AS $$
+DECLARE
+    v_avg_form NUMERIC(4, 2);
+BEGIN
+    SELECT ROUND(AVG(Rating), 2)
+    INTO v_avg_form
+    FROM (
+        SELECT Rating
+        FROM PlayerMatchStat
+        WHERE PlayerID = p_player_id AND Rating IS NOT NULL
+        ORDER BY CreatedAt DESC, MatchID DESC
+        LIMIT p_last_n
+    ) recent_stats;
+
+    RETURN COALESCE(v_avg_form, 6.00);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================================================
+-- Procedure: Multi-Step Player Transfer Workflow
+-- ============================================================================
+CREATE OR REPLACE PROCEDURE sp_process_player_transfer(
+    p_player_id INT,
+    p_new_team_id INT,
+    p_transfer_date DATE DEFAULT CURRENT_DATE,
+    p_transfer_type VARCHAR DEFAULT 'Transfer'
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM Player WHERE PlayerID = p_player_id) THEN
+        RAISE EXCEPTION 'Player with ID % does not exist', p_player_id;
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM Team WHERE TeamID = p_new_team_id) THEN
+        RAISE EXCEPTION 'Team with ID % does not exist', p_new_team_id;
+    END IF;
+
+    UPDATE TeamPlayerHistory
+    SET EndDate = p_transfer_date
+    WHERE PlayerID = p_player_id
+      AND EndDate IS NULL;
+
+    INSERT INTO TeamPlayerHistory (PlayerID, TeamID, BeginDate, EndDate, Type)
+    VALUES (p_player_id, p_new_team_id, p_transfer_date, NULL, p_transfer_type);
+END;
+$$;
+
 
 
