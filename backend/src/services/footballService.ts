@@ -1,6 +1,7 @@
 import { pool } from "../db";
 import { getCoachForTeam } from "./coachData";
 import { callApiFootball } from "./apiFootballClient";
+import { MOCK_DETAILED_MATCHES } from "./mockMatchData";
 
 // ── League priority (lower = bigger / shown first) ───────────────────────────
 const LEAGUE_PRIORITY: Record<string, number> = {
@@ -894,8 +895,9 @@ export async function getMatchById(id: number) {
     // 1. Check if match is in DB
     let { rows } = await pool.query(`${BASE_QUERY} WHERE m.MatchID = $1 OR m.ApiFixtureID = $1`, [id]);
 
-    // 2. If not in DB, fetch from API and sync to DB!
+    // 2. If not in DB, check fallback mock fixtures
     if (rows.length === 0) {
+      let apiUnavailable = false;
       try {
         const raw = await fetchById(id);
         if (raw) {
@@ -904,7 +906,14 @@ export async function getMatchById(id: number) {
           rows = dbRes.rows;
         }
       } catch (e) {
+        apiUnavailable = true;
         console.warn("API fetch in getMatchById:", (e as Error).message);
+      }
+      // Emergency static data is only used when API-Football is unavailable.
+      // A successful empty API response must not be replaced with mock data.
+      if (apiUnavailable) {
+        const fallback = MOCK_DETAILED_MATCHES[id];
+        if (fallback) return mapApiItem(fallback);
       }
     }
 
@@ -1446,6 +1455,13 @@ export async function getMatchLineups(fixtureId: number) {
             WHEN l.Status = 'Starter' THEN 0
             ELSE 1
           END,
+          CASE
+            WHEN UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'G%' THEN 1
+            WHEN UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'D%' THEN 2
+            WHEN UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'M%' THEN 3
+            WHEN UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'F%' OR UPPER(COALESCE(l.Position, p.Position, '')) LIKE 'A%' THEN 4
+            ELSE 5
+          END ASC,
           l.JerseyNumber NULLS LAST,
           p.Name
         `,

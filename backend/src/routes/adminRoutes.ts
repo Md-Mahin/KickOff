@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { pool } from "../db";
+import { pool, withTransaction, PoolClient } from "../db";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth";
 
 const router = Router();
@@ -16,8 +16,9 @@ export function invalidateAdminCache() {
 // ============================================================================
 // 1. GET /api/admin/player-rankings
 // Retrieves paginated & filtered player rankings based on performance ratings
+// Strictly protected: Only accessible by authenticated administrators
 // ============================================================================
-router.get("/player-rankings", optionalAuth, async (req: Request, res: Response) => {
+router.get(["/player-rankings", "/rankings"], requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
   try {
     const position = req.query.position ? String(req.query.position).toUpperCase() : "ALL";
     const search = req.query.search ? String(req.query.search).trim() : "";
@@ -156,8 +157,9 @@ router.get("/player-rankings", optionalAuth, async (req: Request, res: Response)
 // ============================================================================
 // 2. GET /api/admin/position-breakdown
 // Returns top 5 performers for Forwards, Midfielders, Defenders, and Goalkeepers
+// Strictly protected: Only accessible by authenticated administrators
 // ============================================================================
-router.get("/position-breakdown", optionalAuth, async (_req: Request, res: Response) => {
+router.get(["/position-breakdown", "/pos-rankings"], requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
   try {
     const now = Date.now();
     if (cachedBreakdown && cachedBreakdown.expiresAt > now) {
@@ -251,8 +253,9 @@ router.get("/position-breakdown", optionalAuth, async (_req: Request, res: Respo
 // ============================================================================
 // 3. GET /api/admin/rating-distribution
 // Computes tiered player counts and percentages for Donut / Pie Chart display
+// Strictly protected: Only accessible by authenticated administrators
 // ============================================================================
-router.get("/rating-distribution", optionalAuth, async (_req: Request, res: Response) => {
+router.get(["/rating-distribution", "/distribution"], requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
   try {
     const now = Date.now();
     if (cachedDistribution && cachedDistribution.expiresAt > now) {
@@ -372,11 +375,15 @@ router.get("/rating-distribution", optionalAuth, async (_req: Request, res: Resp
 // ============================================================================
 // 4. POST /api/admin/recalculate-ratings
 // Executes the PL/SQL Stored Procedure to recalculate all player ratings
+// Multi-step workflow modifying Player and PlayerRatingHistory tables
+// Strictly protected: Only accessible by authenticated administrators
 // ============================================================================
-router.post("/recalculate-ratings", optionalAuth, async (_req: Request, res: Response) => {
+router.post("/recalculate-ratings", requireAuth, requireRole("admin"), async (_req: Request, res: Response) => {
   try {
     const startTime = Date.now();
-    await pool.query(`CALL update_all_player_ratings('2025/2026')`);
+    await withTransaction(async (client: PoolClient) => {
+      await client.query(`CALL update_all_player_ratings('2025/2026')`);
+    });
     const durationMs = Date.now() - startTime;
 
     // Invalidate in-memory caches so fresh numbers are immediately reflected
@@ -389,7 +396,7 @@ router.post("/recalculate-ratings", optionalAuth, async (_req: Request, res: Res
 
     return res.json({
       success: true,
-      message: "Player ratings recalculated successfully via PL/SQL procedure",
+      message: "Player ratings recalculated successfully via PL/SQL procedure update_all_player_ratings",
       updatedCount,
       durationMs,
       timestamp: new Date().toISOString(),
@@ -397,6 +404,47 @@ router.post("/recalculate-ratings", optionalAuth, async (_req: Request, res: Res
   } catch (err) {
     console.error("POST /api/admin/recalculate-ratings error:", err);
     return res.status(500).json({ message: "Failed to recalculate player ratings" });
+  }
+});
+
+// ============================================================================
+// 5. POST /api/admin/transfer-player
+// Executes the PL/SQL Stored Procedure sp_process_player_transfer to transfer a player
+// Multi-step workflow modifying TeamPlayerHistory and triggering PlayerTransferAudit
+// Strictly protected: Only accessible by authenticated administrators
+// ============================================================================
+router.post("/transfer-player", requireAuth, requireRole("admin"), async (req: Request, res: Response) => {
+  try {
+    const { playerId, newTeamId, transferDate, transferType } = req.body;
+    if (!playerId || !newTeamId) {
+      return res.status(400).json({ message: "Player ID and New Team ID are required." });
+    }
+
+    const effectiveDate = transferDate || new Date().toISOString().split("T")[0];
+    const type = transferType || "Transfer";
+
+    await withTransaction(async (client: PoolClient) => {
+      await client.query(
+        `CALL sp_process_player_transfer($1, $2, $3::date, $4)`,
+        [Number(playerId), Number(newTeamId), effectiveDate, type]
+      );
+    });
+
+    invalidateAdminCache();
+
+    const auditRes = await pool.query(
+      `SELECT * FROM PlayerTransferAudit WHERE PlayerID = $1 ORDER BY AuditID DESC LIMIT 1`,
+      [Number(playerId)]
+    );
+
+    return res.json({
+      success: true,
+      message: "Player transfer processed successfully via PL/SQL procedure sp_process_player_transfer",
+      transfer: auditRes.rows[0] ?? null,
+    });
+  } catch (err) {
+    console.error("POST /api/admin/transfer-player error:", err);
+    return res.status(500).json({ message: (err as Error).message || "Failed to process player transfer" });
   }
 });
 

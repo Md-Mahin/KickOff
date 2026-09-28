@@ -4,7 +4,7 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 
-import { pool } from "../db";
+import { pool, withTransaction, PoolClient } from "../db";
 import { requireAuth } from "../middleware/auth";
 
 const router = Router();
@@ -23,11 +23,13 @@ async function createSession(res: Response, user: User) {
   if (!jwtSecret) throw new Error("JWT_SECRET is not configured");
   const sessionId = randomUUID();
   try {
-    await pool.query(
-      `INSERT INTO UserSessions (SessionID, UserID, ExpiresAt)
-       VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '7 days')`,
-      [sessionId, user.id]
-    );
+    await withTransaction(async (client: PoolClient) => {
+      await client.query(
+        `INSERT INTO UserSessions (SessionID, UserID, ExpiresAt)
+         VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '7 days')`,
+        [sessionId, user.id]
+      );
+    });
   } catch {
     // DB offline — continue and use stateless session
   }
@@ -37,7 +39,7 @@ async function createSession(res: Response, user: User) {
     { subject: String(user.id), expiresIn: `${sessionDays}d` }
   );
   setSessionCookie(res, token);
-  return { user };
+  return { user, token };
 }
 
 function readCredentials(body: unknown): Credentials {
@@ -56,34 +58,53 @@ async function register(res: Response, credentials: Credentials, role: "fan" | "
   }
   try {
     const passwordHash = await bcrypt.hash(password, 12);
-    const result = await pool.query(
-      `INSERT INTO Users (Username, Email, PasswordHash, Role)
-       VALUES ($1, $2, $3, $4)
-       RETURNING UserID AS "id", Username AS "name", Email AS "email", Role AS "role"`,
-      [name, email, passwordHash, role]
-    );
-    const user = result.rows[0] as User;
+    
+    // Explicit transaction control: atomic insertion of user, session, and followed preferences
+    const sessionData = await withTransaction(async (client: PoolClient) => {
+      const result = await client.query(
+        `INSERT INTO Users (Username, Email, PasswordHash, Role)
+         VALUES ($1, $2, $3, $4)
+         RETURNING UserID AS "id", Username AS "name", Email AS "email", Role AS "role"`,
+        [name, email, passwordHash, role]
+      );
+      const user = result.rows[0] as User;
 
-    // Auto-create session so user is immediately logged in
-    const sessionData = await createSession(res, user);
+      // Auto-create session in database
+      const sessionId = randomUUID();
+      await client.query(
+        `INSERT INTO UserSessions (SessionID, UserID, ExpiresAt)
+         VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '7 days')`,
+        [sessionId, user.id]
+      );
 
-    // Save team preferences (best-effort — skip if DB issue or team not found)
-    for (const teamId of teamIds) {
-      try {
-        await pool.query("INSERT INTO UserFollowsTeam (UserID, TeamID) VALUES ($1, $2) ON CONFLICT DO NOTHING", [user.id, teamId]);
-      } catch {}
-    }
+      // Save initial team preferences
+      for (const teamId of teamIds) {
+        await client.query(
+          "INSERT INTO UserFollowsTeam (UserID, TeamID) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [user.id, teamId]
+        );
+      }
 
-    // Save player preferences (best-effort)
-    for (const playerId of playerIds) {
-      try {
-        await pool.query("INSERT INTO UserFollowsPlayer (UserID, PlayerID) VALUES ($1, $2) ON CONFLICT DO NOTHING", [user.id, playerId]);
-      } catch {}
-    }
+      // Save initial player preferences
+      for (const playerId of playerIds) {
+        await client.query(
+          "INSERT INTO UserFollowsPlayer (UserID, PlayerID) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+          [user.id, playerId]
+        );
+      }
+
+      const token = jwt.sign(
+        { sid: sessionId, role: user.role },
+        jwtSecret!,
+        { subject: String(user.id), expiresIn: `${sessionDays}d` }
+      );
+      setSessionCookie(res, token);
+      return { user, token };
+    });
 
     return res.status(201).json(sessionData);
   } catch (error) {
-    if (typeof error === "object" && error !== null && "code" in error && error.code === "23505") return res.status(409).json({ message: "An account with that name or email already exists." });
+    if (typeof error === "object" && error !== null && "code" in error && (error as any).code === "23505") return res.status(409).json({ message: "An account with that name or email already exists." });
     console.error("Unable to create user:", error);
     return res.status(500).json({ message: "Unable to create your account. Please try again." });
   }
@@ -118,7 +139,12 @@ router.post("/login", async (req, res) => {
 router.get("/me", requireAuth, (req, res) => res.json({ user: req.auth }));
 
 router.post("/logout", requireAuth, async (req, res) => {
-  await pool.query("UPDATE UserSessions SET RevokedAt = CURRENT_TIMESTAMP WHERE SessionID = $1", [req.auth!.sessionId]);
+  await withTransaction(async (client: PoolClient) => {
+    await client.query(
+      "UPDATE UserSessions SET RevokedAt = CURRENT_TIMESTAMP WHERE SessionID = $1",
+      [req.auth!.sessionId]
+    );
+  });
   res.setHeader("Set-Cookie", "kickoff_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax");
   return res.status(204).send();
 });
