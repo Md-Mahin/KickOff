@@ -43,58 +43,70 @@ async function callApiFootball(path: string) {
 
 // ============================================================================
 // 1. Initial Page Load: Fetch Basic Match List
+// Primary Source: Mock matches and persistent database fixtures
 // Only fetches teams and match status (FT, UPCOMING, LIVE)
-// Error Handling: Uses backup mock data ONLY if API-Football call fails
 // ============================================================================
 export async function getBasicMatchList(): Promise<{
   source: "API-Football" | "Mock Fallback";
   matches: BasicMatchItem[];
 }> {
   try {
-    const items = await callApiFootball(`/fixtures?date=${todayStr()}`);
+    const dbRes = await pool.query(`
+      SELECT m.MatchID, m.HomeGoals, m.AwayGoals, m.MatchDate,
+             tr.TournamentID, tr.Name AS TournamentName,
+             home.TeamID AS HomeTeamID, home.Name AS HomeTeamName, home.Logo AS HomeTeamLogo,
+             away.TeamID AS AwayTeamID, away.Name AS AwayTeamName, away.Logo AS AwayTeamLogo
+      FROM Match m
+      JOIN Tournament tr ON m.TournamentID = tr.TournamentID
+      JOIN Team home ON m.HomeTeamID = home.TeamID
+      JOIN Team away ON m.AwayTeamID = away.TeamID
+      ORDER BY m.MatchDate DESC
+    `);
 
-    if (Array.isArray(items) && items.length > 0) {
-      const basicMatches: BasicMatchItem[] = items.map((item: any) => {
-        const mins = item.fixture.status.elapsed;
+    const existingIds = new Set(MOCK_BASIC_MATCHES.map((m) => m.id));
+    const dbMatches: BasicMatchItem[] = [];
+
+    for (const row of dbRes.rows) {
+      const matchId = Number(row.matchid);
+      if (!existingIds.has(matchId)) {
+        const date = new Date(row.matchdate);
+        const mins = Math.floor((Date.now() - date.getTime()) / 60000);
         let status: "LIVE" | "FT" | "UPCOMING" = "UPCOMING";
-        const shortStatus = (item.fixture.status.short || "").toUpperCase();
-
-        if (["1H", "2H", "HT", "ET", "P", "LIVE"].includes(shortStatus)) {
+        let minute: number | null = null;
+        if (mins >= 0 && mins < 120) {
           status = "LIVE";
-        } else if (["FT", "AET", "PEN"].includes(shortStatus)) {
+          minute = Math.min(mins, 90);
+        } else if (mins >= 120) {
           status = "FT";
+          minute = 90;
         }
 
-        return {
-          id: Number(item.fixture.id),
-          leagueId: item.league?.id ? Number(item.league.id) : undefined,
-          league: item.league?.name ?? "League",
-          country: item.league?.country ?? "International",
-          homeTeam: item.teams.home.name,
-          homeTeamId: Number(item.teams.home.id),
-          homeLogo: item.teams.home.logo ?? null,
-          awayTeam: item.teams.away.name,
-          awayTeamId: Number(item.teams.away.id),
-          awayLogo: item.teams.away.logo ?? null,
-          homeScore: item.goals.home ?? null,
-          awayScore: item.goals.away ?? null,
+        dbMatches.push({
+          id: matchId,
+          leagueId: Number(row.tournamentid),
+          league: row.tournamentname,
+          country: "International",
+          homeTeam: row.hometeamname,
+          homeTeamId: Number(row.hometeamid),
+          homeLogo: row.hometeamlogo ?? null,
+          awayTeam: row.awayteamname,
+          awayTeamId: Number(row.awayteamid),
+          awayLogo: row.awayteamlogo ?? null,
+          homeScore: status === "UPCOMING" ? null : (row.homegoals !== null ? Number(row.homegoals) : 0),
+          awayScore: status === "UPCOMING" ? null : (row.awaygoals !== null ? Number(row.awaygoals) : 0),
           status,
-          minute: mins,
-          date: item.fixture.date,
-        };
-      });
-
-      return {
-        source: "API-Football",
-        matches: basicMatches,
-      };
+          minute,
+          date: row.matchdate,
+        });
+      }
     }
 
-    throw new Error("No fixtures returned by API-Football");
+    return {
+      source: "Mock Fallback",
+      matches: [...MOCK_BASIC_MATCHES, ...dbMatches],
+    };
   } catch (error) {
-    console.warn(
-      `[Basic Match List] API-Football call failed (${(error as Error).message}). Engaging backup mock data fallback.`
-    );
+    console.warn(`[getBasicMatchList] DB query fallback: ${(error as Error).message}`);
     return {
       source: "Mock Fallback",
       matches: MOCK_BASIC_MATCHES,
@@ -642,75 +654,24 @@ export async function pullMatchDetailsFromDatabase(matchId: number) {
 // ============================================================================
 // Core Execution Pipeline (Triggered on User Click of a Match)
 // Strict Flow:
-// 1. Call API-Football for details (Fallback to mock data on failure)
+// 1. Fetch detailed match data (Mock data repository as PRIMARY source)
 // 2. Put and fill up the database with this data
 // 3. Pull and show the data to the user DIRECTLY from the database
 // ============================================================================
 export async function executeMatchDetailPipeline(matchId: number) {
   let rawData: DetailedMockMatch | null = null;
-  let dataSource: "API-Football" | "Mock Fallback" = "API-Football";
+  let dataSource: "API-Football" | "Mock Fallback" = "Mock Fallback";
 
-  // Step 1: Call API-Football (with automatic fallback to mock data on failure)
+  // Step 1: Fetch detailed match data (Mock data repository as PRIMARY source)
   try {
-    const [fixtureItems, lineupsItems, eventsItems] = await Promise.all([
-      callApiFootball(`/fixtures?id=${matchId}`),
-      callApiFootball(`/fixtures/lineups?fixture=${matchId}`),
-      callApiFootball(`/fixtures/events?fixture=${matchId}`),
-    ]);
-
-    if (Array.isArray(fixtureItems) && fixtureItems.length > 0) {
-      const item = fixtureItems[0];
-      rawData = {
-        fixture: {
-          id: Number(item.fixture.id),
-          date: item.fixture.date,
-          venue: item.fixture.venue
-            ? {
-                name: item.fixture.venue.name,
-                city: item.fixture.venue.city,
-                country: item.fixture.venue.country,
-              }
-            : null,
-          referee: item.fixture.referee,
-          status: {
-            short: item.fixture.status.short,
-            elapsed: item.fixture.status.elapsed,
-          },
-        },
-        league: {
-          id: Number(item.league.id),
-          name: item.league.name,
-          country: item.league.country,
-          season: item.league.season,
-        },
-        teams: {
-          home: {
-            id: Number(item.teams.home.id),
-            name: item.teams.home.name,
-            logo: item.teams.home.logo,
-          },
-          away: {
-            id: Number(item.teams.away.id),
-            name: item.teams.away.name,
-            logo: item.teams.away.logo,
-          },
-        },
-        goals: {
-          home: item.goals.home,
-          away: item.goals.away,
-        },
-        lineups: Array.isArray(lineupsItems) ? lineupsItems : [],
-        events: Array.isArray(eventsItems) ? eventsItems : [],
-      };
-    } else {
-      throw new Error(`API-Football returned no fixture items for #${matchId}`);
-    }
+    rawData = await resolveMockDetailedMatch(matchId);
+    dataSource = "Mock Fallback";
   } catch (error) {
     console.warn(
-      `[Pipeline Step 1] API-Football call failed for match #${matchId} (${(error as Error).message}). Engaging backup mock data fallback.`
+      `[Pipeline Step 1] Mock resolution failed for match #${matchId} (${(error as Error).message}). Generating fallback mock.`
     );
     dataSource = "Mock Fallback";
-    rawData = await resolveMockDetailedMatch(matchId);
+    rawData = generateMockDetailedMatch(matchId);
   }
 
   // Step 2: Put and fill up the database with this data
@@ -726,7 +687,7 @@ export async function executeMatchDetailPipeline(matchId: number) {
   return {
     ...dbData,
     _pipelineMetadata: {
-      sequence: "1. Fetch API/Mock -> 2. Store to DB -> 3. Pull from DB -> 4. Send to User",
+      sequence: "1. Fetch Mock (Primary) -> 2. Store to DB -> 3. Pull from DB -> 4. Send to User",
       source: dataSource,
       databaseVerified: true,
       retrievedDirectlyFromDatabase: true,

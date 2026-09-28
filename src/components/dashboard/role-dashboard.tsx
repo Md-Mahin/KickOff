@@ -71,14 +71,9 @@ export function RoleDashboard() {
               <a className="font-semibold text-blue-600 underline hover:text-blue-700" href="/sign-in">Sign in</a> to access your role workspace.
             </p>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Testing the new Player Performance Rating & Statistics system?
+              Follow your favorite teams, view match timelines, and stay updated.
             </p>
           </div>
-          <Link href="/admin">
-            <Button variant="outline" size="sm" className="text-xs font-semibold shrink-0">
-              ⚡ Open Admin Performance Console
-            </Button>
-          </Link>
         </CardContent>
       </Card>
     )
@@ -92,13 +87,6 @@ export function RoleDashboard() {
             <span>{user.role === "admin" ? "Administrator Console" : "Fan Workspace"}</span>
             <span className="rounded-full bg-muted px-3 py-1 text-xs font-medium uppercase">{user.role}</span>
           </div>
-          {user.role === "fan" && (
-            <Link href="/admin">
-              <Button variant="ghost" size="sm" className="text-xs text-muted-foreground hover:text-slate-900">
-                Admin Ratings Console ↗
-              </Button>
-            </Link>
-          )}
           {user.role === "admin" && (
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-xs font-semibold">

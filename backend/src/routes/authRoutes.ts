@@ -5,7 +5,7 @@ import jwt from "jsonwebtoken";
 import { randomUUID } from "crypto";
 
 import { pool, withTransaction, PoolClient } from "../db";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, optionalAuth } from "../middleware/auth";
 
 const router = Router();
 const jwtSecret = process.env.JWT_SECRET ??
@@ -16,7 +16,17 @@ type Credentials = { name: string; email: string; password: string };
 type User = { id: number; name: string; email: string; role: "fan" | "admin" };
 
 function setSessionCookie(res: Response, token: string) {
-  res.setHeader("Set-Cookie", `kickoff_session=${token}; HttpOnly; Path=/; Max-Age=${sessionDays * 86400}; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
+  res.setHeader(
+    "Set-Cookie",
+    `kickoff_session=${token}; HttpOnly; Path=/; Max-Age=${sessionDays * 86400}; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
+  );
+}
+
+function clearSessionCookie(res: Response) {
+  res.setHeader(
+    "Set-Cookie",
+    `kickoff_session=; HttpOnly; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax${process.env.NODE_ENV === "production" ? "; Secure" : ""}`
+  );
 }
 
 async function createSession(res: Response, user: User) {
@@ -138,15 +148,21 @@ router.post("/login", async (req, res) => {
 
 router.get("/me", requireAuth, (req, res) => res.json({ user: req.auth }));
 
-router.post("/logout", requireAuth, async (req, res) => {
-  await withTransaction(async (client: PoolClient) => {
-    await client.query(
-      "UPDATE UserSessions SET RevokedAt = CURRENT_TIMESTAMP WHERE SessionID = $1",
-      [req.auth!.sessionId]
-    );
-  });
-  res.setHeader("Set-Cookie", "kickoff_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax");
-  return res.status(204).send();
+router.post("/logout", optionalAuth, async (req, res) => {
+  if (req.auth?.sessionId) {
+    try {
+      await withTransaction(async (client: PoolClient) => {
+        await client.query(
+          "UPDATE UserSessions SET RevokedAt = CURRENT_TIMESTAMP WHERE SessionID = $1",
+          [req.auth!.sessionId]
+        );
+      });
+    } catch (err) {
+      console.warn("Logout session revocation warning:", err);
+    }
+  }
+  clearSessionCookie(res);
+  return res.status(200).json({ success: true, message: "Logged out successfully" });
 });
 
 export default router;

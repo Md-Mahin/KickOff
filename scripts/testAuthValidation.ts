@@ -29,7 +29,6 @@ async function runAuthTests() {
 
   // 1. Unauthenticated access to protected pages
   const protectedPages = [
-    "/",
     "/admin",
     "/match/991",
     "/team/1",
@@ -37,7 +36,7 @@ async function runAuthTests() {
     "/tournament/1",
   ];
 
-  console.log("--- 1. Testing Unauthenticated Access Blocks on Every Page ---");
+  console.log("--- 1. Testing Unauthenticated Access Blocks on Protected Pages ---");
   for (const page of protectedPages) {
     const req = createMockRequest(`http://localhost:3000${page}`);
     const res = middleware(req);
@@ -52,10 +51,18 @@ async function runAuthTests() {
     );
   }
 
-  // 2. Authenticated access to protected pages
+  // 1b. Unauthenticated access to home page returns to no sign in state
+  const unauthHome = middleware(createMockRequest("http://localhost:3000/"));
+  assert(
+    unauthHome.headers.get("location") === null,
+    "Unauthenticated request to home '/' returns to no sign in state without redirection"
+  );
+
+  // 2. Authenticated access to all pages
   console.log("\n--- 2. Testing Authenticated Access Allows Every Page ---");
+  const allPages = ["/", ...protectedPages];
   const dummyToken = "valid.test.jwt.token";
-  for (const page of protectedPages) {
+  for (const page of allPages) {
     const req = createMockRequest(`http://localhost:3000${page}`, dummyToken);
     const res = middleware(req);
     const redirectLocation = res.headers.get("location");

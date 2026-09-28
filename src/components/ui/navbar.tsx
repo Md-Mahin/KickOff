@@ -35,9 +35,20 @@ export default function Navbar() {
   }, [])
 
   async function logout() {
-    await fetch("http://localhost:5000/api/auth/logout", { method: "POST", credentials: "include" })
+    try {
+      await fetch("http://localhost:5000/api/auth/logout", {
+        method: "POST",
+        credentials: "include",
+      })
+    } catch (e) {
+      console.warn("Logout error:", e)
+    }
+    // Also explicitly expire client cookies
+    document.cookie = "kickoff_session=; Path=/; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
+    document.cookie = "kickoff_session=; Path=/; Domain=localhost; Max-Age=0; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax"
     setSignedIn(false)
-    window.location.href = "/sign-in"
+    setIsAdmin(false)
+    window.location.href = "/"
   }
 
   return (
@@ -90,16 +101,15 @@ export default function Navbar() {
                   Dashboard
                 </Link>
 
-                <Link
-                  href="/admin"
-                  className={`rounded-md px-3 py-2 text-sm font-medium flex items-center gap-1.5 transition-colors ${
-                    isAdmin
-                      ? "text-amber-300 hover:bg-white/10 hover:text-white"
-                      : "text-gray-300 hover:bg-white/10 hover:text-white"
-                  }`}
-                >
-                  <span>⚡</span> Admin Ratings
-                </Link>
+                {/* Shown IF AND ONLY IF an account with admin privilege is signed in */}
+                {signedIn && isAdmin && (
+                  <Link
+                    href="/admin"
+                    className="rounded-md px-3 py-2 text-sm font-medium flex items-center gap-1.5 transition-colors text-amber-300 hover:bg-white/10 hover:text-white"
+                  >
+                    <span>⚡</span> Admin Ratings
+                  </Link>
+                )}
 
               </div>
             </div>
@@ -135,12 +145,15 @@ export default function Navbar() {
             Dashboard
           </Link>
 
-          <Link
-            href="/admin"
-            className="block rounded-md px-3 py-2 text-base font-medium text-amber-300 hover:bg-white/10"
-          >
-            ⚡ Admin Ratings
-          </Link>
+          {/* Shown IF AND ONLY IF an account with admin privilege is signed in */}
+          {signedIn && isAdmin && (
+            <Link
+              href="/admin"
+              className="block rounded-md px-3 py-2 text-base font-medium text-amber-300 hover:bg-white/10"
+            >
+              ⚡ Admin Ratings
+            </Link>
+          )}
 
         </div>
       </div>

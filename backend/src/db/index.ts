@@ -1,5 +1,5 @@
 
-import { Pool } from "pg";
+import { Pool, PoolClient } from "pg";
 import dotenv from "dotenv";
 import path from "path";
 import fs from "fs";
@@ -17,6 +17,34 @@ export const pool = new Pool({
 pool.on("error", (err) => {
   console.error("Unexpected PostgreSQL error:", err);
 });
+
+export { Pool };
+export type { PoolClient };
+
+/**
+ * Helper to execute database operations within an explicit transaction.
+ * Automatically issues BEGIN, commits on success, or issues ROLLBACK on failure.
+ */
+export async function withTransaction<T>(
+  callback: (client: PoolClient) => Promise<T>
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await callback(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackError) {
+      console.error("Failed to rollback transaction:", rollbackError);
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 export async function initializeDatabase() {
   await pool.query(`
