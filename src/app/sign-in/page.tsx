@@ -63,8 +63,8 @@ export default function SignInPage() {
           </p>
         ) : null}
         <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium">Email address</label>
-          <input id="email" name="email" type="email" autoComplete="email" placeholder="you@example.com" className={inputClassName} required />
+          <label htmlFor="email" className="text-sm font-medium">Email or username</label>
+          <input id="email" name="email" type="text" autoComplete="username" placeholder="you@example.com or your username" className={inputClassName} required />
         </div>
 
         <div className="space-y-2">

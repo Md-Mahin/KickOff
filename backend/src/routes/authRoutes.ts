@@ -32,17 +32,13 @@ function clearSessionCookie(res: Response) {
 async function createSession(res: Response, user: User) {
   if (!jwtSecret) throw new Error("JWT_SECRET is not configured");
   const sessionId = randomUUID();
-  try {
-    await withTransaction(async (client: PoolClient) => {
-      await client.query(
-        `INSERT INTO UserSessions (SessionID, UserID, ExpiresAt)
-         VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '7 days')`,
-        [sessionId, user.id]
-      );
-    });
-  } catch {
-    // DB offline — continue and use stateless session
-  }
+  await withTransaction(async (client: PoolClient) => {
+    await client.query(
+      `INSERT INTO UserSessions (SessionID, UserID, ExpiresAt)
+       VALUES ($1, $2, CURRENT_TIMESTAMP + INTERVAL '7 days')`,
+      [sessionId, user.id]
+    );
+  });
   const token = jwt.sign(
     { sid: sessionId, role: user.role },
     jwtSecret,
@@ -136,7 +132,14 @@ router.post("/login", async (req, res) => {
   const { email, password } = readCredentials(req.body);
   if (!email || !password) return res.status(400).json({ message: "Enter your email address and password." });
   try {
-    const result = await pool.query(`SELECT UserID AS "id", Username AS "name", Email AS "email", PasswordHash AS "passwordHash", Role AS "role" FROM Users WHERE Email = $1`, [email]);
+    const result = await pool.query(
+      `SELECT UserID AS "id", Username AS "name", Email AS "email", PasswordHash AS "passwordHash", Role AS "role"
+       FROM Users
+       WHERE LOWER(Email) = LOWER($1) OR LOWER(Username) = LOWER($1)
+       ORDER BY CASE WHEN LOWER(Email) = LOWER($1) THEN 0 ELSE 1 END
+       LIMIT 1`,
+      [email]
+    );
     const user = result.rows[0] as (User & { passwordHash: string }) | undefined;
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) return res.status(401).json({ message: "Incorrect email or password." });
     return res.json(await createSession(res, user));
@@ -146,7 +149,10 @@ router.post("/login", async (req, res) => {
   }
 });
 
-router.get("/me", requireAuth, (req, res) => res.json({ user: req.auth }));
+router.get("/me", requireAuth, (req, res) => {
+  const { userId, name, email, role } = req.auth!;
+  return res.json({ user: { userId, name, email, role } });
+});
 
 router.post("/logout", optionalAuth, async (req, res) => {
   if (req.auth?.sessionId) {

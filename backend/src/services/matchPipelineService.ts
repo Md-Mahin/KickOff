@@ -3,6 +3,7 @@ import type {
   DetailedMockMatch,
   BasicMatchItem,
 } from "./mockMatchData";
+import { MOCK_BASIC_MATCHES } from "./mockMatchData";
 import { callApiFootball as requestApiFootball } from "./apiFootballClient";
 import { syncFixtureToDb, upsertApiPlayer, upsertApiTeam, upsertApiTournament } from "./footballService";
 
@@ -24,12 +25,8 @@ async function markFixtureListSync(unavailable = false) {
 
 // ============================================================================
 // 1. Initial Page Load: Fetch Basic Match List
-// Primary Source: Mock matches and persistent database fixtures
 // Only fetches teams and match status (FT, UPCOMING, LIVE)
-<<<<<<< HEAD
-=======
 // Match lists are database-first; API-Football fills the DB only when today's rows are missing.
->>>>>>> 388efba249ab8f18dec68ec3479c4d6cee6e1a91
 // ============================================================================
 export async function getBasicMatchList(): Promise<{
   source: "Database" | "Mock Fallback";
@@ -38,56 +35,6 @@ export async function getBasicMatchList(): Promise<{
   const today = todayStr();
   let databaseRows: any[] = [];
   try {
-<<<<<<< HEAD
-    const dbRes = await pool.query(`
-      SELECT m.MatchID, m.HomeGoals, m.AwayGoals, m.MatchDate,
-             tr.TournamentID, tr.Name AS TournamentName,
-             home.TeamID AS HomeTeamID, home.Name AS HomeTeamName, home.Logo AS HomeTeamLogo,
-             away.TeamID AS AwayTeamID, away.Name AS AwayTeamName, away.Logo AS AwayTeamLogo
-      FROM Match m
-      JOIN Tournament tr ON m.TournamentID = tr.TournamentID
-      JOIN Team home ON m.HomeTeamID = home.TeamID
-      JOIN Team away ON m.AwayTeamID = away.TeamID
-      ORDER BY m.MatchDate DESC
-    `);
-
-    const existingIds = new Set(MOCK_BASIC_MATCHES.map((m) => m.id));
-    const dbMatches: BasicMatchItem[] = [];
-
-    for (const row of dbRes.rows) {
-      const matchId = Number(row.matchid);
-      if (!existingIds.has(matchId)) {
-        const date = new Date(row.matchdate);
-        const mins = Math.floor((Date.now() - date.getTime()) / 60000);
-        let status: "LIVE" | "FT" | "UPCOMING" = "UPCOMING";
-        let minute: number | null = null;
-        if (mins >= 0 && mins < 120) {
-          status = "LIVE";
-          minute = Math.min(mins, 90);
-        } else if (mins >= 120) {
-          status = "FT";
-          minute = 90;
-        }
-
-        dbMatches.push({
-          id: matchId,
-          leagueId: Number(row.tournamentid),
-          league: row.tournamentname,
-          country: "International",
-          homeTeam: row.hometeamname,
-          homeTeamId: Number(row.hometeamid),
-          homeLogo: row.hometeamlogo ?? null,
-          awayTeam: row.awayteamname,
-          awayTeamId: Number(row.awayteamid),
-          awayLogo: row.awayteamlogo ?? null,
-          homeScore: status === "UPCOMING" ? null : (row.homegoals !== null ? Number(row.homegoals) : 0),
-          awayScore: status === "UPCOMING" ? null : (row.awaygoals !== null ? Number(row.awaygoals) : 0),
-          status,
-          minute,
-          date: row.matchdate,
-        });
-      }
-=======
     const { rows } = await pool.query(`
       SELECT COALESCE(m.ApiFixtureID, m.MatchID) AS MatchID, m.MatchDate, m.HomeGoals, m.AwayGoals,
         t.TournamentID, t.Name AS TournamentName,
@@ -142,21 +89,9 @@ export async function getBasicMatchList(): Promise<{
     if (Array.isArray(items)) {
       await markFixtureListSync();
       return { source: "Database", matches: databaseRows.map((r: any) => mapBasicMatch(r)) };
->>>>>>> 388efba249ab8f18dec68ec3479c4d6cee6e1a91
     }
-
-    return {
-      source: "Mock Fallback",
-      matches: [...MOCK_BASIC_MATCHES, ...dbMatches],
-    };
+    throw new Error("API-Football returned an invalid fixture response");
   } catch (error) {
-<<<<<<< HEAD
-    console.warn(`[getBasicMatchList] DB query fallback: ${(error as Error).message}`);
-    return {
-      source: "Mock Fallback",
-      matches: MOCK_BASIC_MATCHES,
-    };
-=======
     await markFixtureListSync(true).catch(() => {});
     console.warn(
       `[Basic Match List] API-Football unavailable; using database data when available (${(error as Error).message}).`
@@ -174,8 +109,7 @@ export async function getBasicMatchList(): Promise<{
       `, [today]);
       if (rows.length) return { source: "Mock Fallback", matches: rows.map((r: any) => mapBasicMatch(r)) };
     } catch { }
-    return { source: "Database", matches: [] };
->>>>>>> 388efba249ab8f18dec68ec3479c4d6cee6e1a91
+    return { source: "Mock Fallback", matches: MOCK_BASIC_MATCHES };
   }
 }
 
@@ -687,35 +621,12 @@ export async function pullMatchDetailsFromDatabase(matchId: number) {
 }
 
 // ============================================================================
-<<<<<<< HEAD
-// Core Execution Pipeline (Triggered on User Click of a Match)
-// Strict Flow:
-// 1. Fetch detailed match data (Mock data repository as PRIMARY source)
-// 2. Put and fill up the database with this data
-// 3. Pull and show the data to the user DIRECTLY from the database
-// ============================================================================
-export async function executeMatchDetailPipeline(matchId: number) {
-  let rawData: DetailedMockMatch | null = null;
-  let dataSource: "API-Football" | "Mock Fallback" = "Mock Fallback";
-
-  // Step 1: Fetch detailed match data (Mock data repository as PRIMARY source)
-  try {
-    rawData = await resolveMockDetailedMatch(matchId);
-    dataSource = "Mock Fallback";
-  } catch (error) {
-    console.warn(
-      `[Pipeline Step 1] Mock resolution failed for match #${matchId} (${(error as Error).message}). Generating fallback mock.`
-    );
-    dataSource = "Mock Fallback";
-    rawData = generateMockDetailedMatch(matchId);
-=======
 // Database-first detail hydration. Detail endpoints are loaded only when requested.
 async function hydrateMatch(matchId: number) {
   let dbData = await pullMatchDetailsFromDatabase(matchId);
   if (dbData) {
     console.log('[DB] Match data served from database');
     return dbData;
->>>>>>> 388efba249ab8f18dec68ec3479c4d6cee6e1a91
   }
   const fixtures = await callApiFootball(`/fixtures?id=${matchId}`);
   if (!fixtures.length) return null;
@@ -727,26 +638,6 @@ async function hydrateMatch(matchId: number) {
   } as DetailedMockMatch;
   await syncFixtureToDb(item);
   await persistMatchDetailsToDatabase(matchId, rawData);
-<<<<<<< HEAD
-
-  // Step 3: Pull and show the data to the user DIRECTLY from the database
-  const dbData = await pullMatchDetailsFromDatabase(matchId);
-
-  if (!dbData) {
-    throw new Error(`Failed to retrieve persisted match #${matchId} from database`);
-  }
-
-  return {
-    ...dbData,
-    _pipelineMetadata: {
-      sequence: "1. Fetch Mock (Primary) -> 2. Store to DB -> 3. Pull from DB -> 4. Send to User",
-      source: dataSource,
-      databaseVerified: true,
-      retrievedDirectlyFromDatabase: true,
-      timestamp: new Date().toISOString(),
-    },
-  };
-=======
   dbData = await pullMatchDetailsFromDatabase(matchId);
   return dbData;
 }
@@ -859,5 +750,4 @@ export async function executeMatchDetailPipeline(matchId: number) {
   ]);
   return { ...(events?.match ?? lineups?.match ?? dbData),
     _pipelineMetadata: { source: 'PostgreSQL', databaseVerified: true, retrievedDirectlyFromDatabase: true } };
->>>>>>> 388efba249ab8f18dec68ec3479c4d6cee6e1a91
 }
