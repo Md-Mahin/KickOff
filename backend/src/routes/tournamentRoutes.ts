@@ -51,7 +51,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
     }
 
     // 3. Matches
-    // Fetch some matches for this tournament
+    // Fetch matches for this tournament (both league and knockout)
     const matchRes = await pool.query(
       `SELECT 
         m.MatchID as id, 
@@ -59,6 +59,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
         home.TeamID as hometeamid, home.Name as hometeamname, home.Logo as hometeamlogo,
         away.TeamID as awayteamid, away.Name as awayteamname, away.Logo as awayteamlogo,
         m.HomeGoals, m.AwayGoals,
+        m.round_status, m.round_position,
         t.Name as tournament
        FROM Match m
        JOIN Team home ON m.HomeTeamID = home.TeamID
@@ -66,7 +67,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
        JOIN Tournament t ON m.TournamentID = t.TournamentID
        WHERE m.TournamentID = $1
        ORDER BY m.MatchDate DESC
-       LIMIT 20`,
+       LIMIT 100`,
       [id]
     );
 
@@ -88,6 +89,8 @@ router.get("/:id", optionalAuth, async (req, res) => {
         id: row.id,
         date: row.date,
         status,
+        round_status: row.round_status ?? "league",
+        round_position: row.round_position ?? null,
         homeTeam: { id: row.hometeamid, name: row.hometeamname, logo: row.hometeamlogo },
         awayTeam: { id: row.awayteamid, name: row.awayteamname, logo: row.awayteamlogo },
         homeGoals: row.homegoals ?? 0,

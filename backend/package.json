@@ -11,6 +11,7 @@
     "seed:users": "tsx scripts/seed100Users.ts",
     "seed:coaches": "tsx scripts/seedCoaches.ts",
     "seed:player-stats": "tsx scripts/seedPlayerStats.ts",
+    "seed:high-voltage": "tsx scripts/seedHighVoltageMatches.ts",
     "seed:admins": "tsx scripts/seedAdminUsers.ts",
     "test:ratings": "tsx scripts/testRatingAlgorithm.ts",
     "test:pipeline": "tsx scripts/testMatchPipeline.ts",

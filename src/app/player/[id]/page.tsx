@@ -76,7 +76,7 @@ export default async function PlayerPage({
   const marketValue = 5 + (playerId % 95) // Mock 5M - 100M
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen text-foreground">
       <main className="mx-auto max-w-7xl px-4 py-6">
 
         {/* ═══════════════════════ HERO CARD ═══════════════════════ */}
@@ -237,14 +237,14 @@ export default async function PlayerPage({
             <Card className="h-full">
               <CardContent className="p-0">
                 {/* Tabs */}
-                <div className="flex border-b border-border">
-                  <button className="px-6 py-4 text-sm font-bold text-blue-600 border-b-2 border-blue-600">
+                <div className="flex items-center gap-2 p-5 pb-0">
+                  <span className="px-4 py-2 text-sm font-bold text-white bg-blue-600 dark:bg-[#621298] rounded-xl shadow-xs">
                     Career
-                  </button>
-                  <button className="px-6 py-4 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  </span>
+                  <button className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-xl transition-colors">
                     Season
                   </button>
-                  <button className="px-6 py-4 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+                  <button className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground rounded-xl transition-colors">
                     Media
                   </button>
                 </div>

@@ -21,7 +21,7 @@ async function main() {
         UPPER(COALESCE(p.Position, 'M')) AS Position,
         m.HomeTeamID,
         m.AwayTeamID,
-        COALESCE(m.HomeGoals, 0) AS HomeGoals,
+        D(m.HomeGoals, 0) AS HomeGoals,
         COALESCE(m.AwayGoals, 0) AS AwayGoals
       FROM Lineup l
       JOIN Player p ON l.PlayerID = p.PlayerID
@@ -156,16 +156,16 @@ async function main() {
       insertedCount++;
     }
 
-    console.log(`✓ Inserted/Updated ${insertedCount} match stats in PlayerMatchStat!`);
+    console.log(` Inserted/Updated ${insertedCount} match stats in PlayerMatchStat!`);
 
-    // 2. Execute PL/SQL Stored Procedure to update all ratings
+    //  Execute PL/SQL Stored Procedure to update all ratings
     console.log("\nExecuting PL/SQL Procedure: CALL update_all_player_ratings('2025/2026')...");
     const startTime = Date.now();
     await pool.query(`CALL update_all_player_ratings('2025/2026')`);
     const elapsed = Date.now() - startTime;
-    console.log(`✓ PL/SQL calculation executed successfully in ${elapsed}ms!`);
+    console.log(` PL/SQL calculation executed successfully in ${elapsed}ms!`);
 
-    // 3. Inspect top rankings
+    //  Inspect top rankings
     const rankings = await pool.query(`
       SELECT
         prh.Rank,

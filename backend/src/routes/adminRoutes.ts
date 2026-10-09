@@ -70,6 +70,7 @@ router.get(["/player-rankings", "/rankings"], requireAuth, requireRole("admin"),
     const total = countRes.rows[0]?.total ?? 0;
 
     // Data query with DENSE_RANK() over overall rating to get true rank
+    // eta ekta complex query
     const queryParams = [...params, limit, offset];
     const dataRes = await pool.query(
       `

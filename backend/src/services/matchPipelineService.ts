@@ -126,9 +126,9 @@ function mapBasicMatch(r: any): BasicMatchItem {
   };
 }
 
-// ============================================================================
+// 
 // 2. Database synchronization for API-backed detail data.
-// ============================================================================
+// 
 
 /**
  * Step 2: Put and fill up the database with the detailed match data
@@ -381,6 +381,8 @@ export async function pullMatchDetailsFromDatabase(matchId: number) {
       m.MatchDate,
       m.HomeGoals,
       m.AwayGoals,
+      m.round_status,
+      m.round_position,
       t.TournamentID,
       t.Name AS TournamentName,
       home.TeamID AS HomeTeamID,
@@ -581,6 +583,8 @@ export async function pullMatchDetailsFromDatabase(matchId: number) {
   return {
     _databaseMatchId: Number(row.matchid),
     _apiFixtureId: row.apifixtureid == null ? null : Number(row.apifixtureid),
+    round_status: row.round_status ?? "league",
+    round_position: row.round_position ?? null,
     fixture: {
       id: Number(row.apifixtureid ?? row.matchid),
       date: row.matchdate,

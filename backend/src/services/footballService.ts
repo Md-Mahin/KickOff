@@ -5,14 +5,14 @@ import { MOCK_DETAILED_MATCHES } from "./mockMatchData";
 
 // ── League priority (lower = bigger / shown first) ───────────────────────────
 const LEAGUE_PRIORITY: Record<string, number> = {
-  "Premier League": 1,
-  "Champions League": 2,
-  "UEFA Champions League": 2,
+  "Champions League": 1,
+  "UEFA Champions League": 1,
+  "Premier League": 2,
   "La Liga": 3,
-  "World Cup": 4,
-  "Bundesliga": 5,
+  "Bundesliga": 4,
+  "Serie A": 5,
   "Ligue 1": 6,
-  "Serie A": 7,
+  "World Cup": 7,
   "Europa League": 8,
   "UEFA Europa League": 8,
   "Copa del Rey": 9,
@@ -33,6 +33,13 @@ const LEAGUE_PRIORITY: Record<string, number> = {
   "MLS": 24,
 };
 
+const FAMOUS_CLUBS = new Set([
+  "real madrid", "barcelona", "manchester city", "liverpool", "arsenal",
+  "bayern munich", "chelsea", "psg", "paris saint germain", "paris saint-germain",
+  "manchester united", "borussia dortmund", "inter milan", "ac milan",
+  "juventus", "atletico madrid", "bayer leverkusen"
+]);
+
 function leaguePriority(name: string, country = ""): number {
   if (name.toLowerCase().includes("premier league") && !country.toLowerCase().includes("england")) {
     return 99;
@@ -45,10 +52,29 @@ function leaguePriority(name: string, country = ""): number {
   return 99;
 }
 
-function sortByLeague<T extends { league: { name: string; country?: string | null } }>(items: T[]): T[] {
+function matchPriority<T extends { fixture?: { id?: number }; teams?: { home: { name: string }; away: { name: string } }; league: { name: string; country?: string | null } }>(item: T): number {
+  const fid = Number(item.fixture?.id);
+  if (fid && [88001, 88002, 88003, 88004, 88005, 88006].includes(fid)) {
+    return -1000 + (fid - 88001);
+  }
+  let score = leaguePriority(item.league.name, item.league.country ?? "") * 10;
+  if (item.teams?.home?.name && item.teams?.away?.name) {
+    const h = item.teams.home.name.toLowerCase().trim();
+    const a = item.teams.away.name.toLowerCase().trim();
+    const homeFamous = FAMOUS_CLUBS.has(h);
+    const awayFamous = FAMOUS_CLUBS.has(a);
+    if (homeFamous && awayFamous) {
+      score -= 500; // Marquee high-voltage clash between two global giants!
+    } else if (homeFamous || awayFamous) {
+      score -= 100; // Famous club fixture
+    }
+  }
+  return score;
+}
+
+function sortByLeague<T extends { teams?: { home: { name: string }; away: { name: string } }; league: { name: string; country?: string | null } }>(items: T[]): T[] {
   return [...items].sort((left, right) =>
-    leaguePriority(left.league.name, left.league.country ?? "") -
-    leaguePriority(right.league.name, right.league.country ?? "")
+    matchPriority(left) - matchPriority(right)
   );
 }
 
@@ -197,6 +223,7 @@ async function fetchById(id: number) {
 const BASE_QUERY = `
   SELECT COALESCE(m.ApiFixtureID, m.MatchID) AS MatchID, m.MatchID AS DatabaseMatchID,
     m.HomeGoals, m.AwayGoals, m.MatchDate,
+    m.round_status, m.round_position,
     venue.Name AS VenueName, venue.City AS VenueCity,
     venueCountry.Name AS VenueCountry,
     t.TournamentID, t.Name AS TournamentName,
@@ -234,6 +261,8 @@ function mapDbRow(row: any) {
       venue: venueObj,
     },
     venue: venueObj,
+    round_status: row.round_status ?? "league",
+    round_position: row.round_position ?? null,
     league: { id: row.tournamentid, name: row.tournamentname, country: "International" },
     teams: {
       home: { id: row.hometeamid, name: row.hometeamname, logo: row.hometeamlogo },
@@ -700,7 +729,22 @@ export async function getFixtures() {
   // 1. Read from PostgreSQL DB first; refresh the fixture list at most once per three hours.
   let databaseRows: any[] = [];
   try {
-    const { rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NOT NULL ORDER BY m.MatchDate DESC`);
+    const ORDER_PRIORITY_SQL = `
+      ORDER BY
+        CASE
+          WHEN (LOWER(home.Name) IN ('real madrid', 'barcelona', 'manchester city', 'liverpool', 'arsenal', 'bayern munich', 'psg', 'chelsea', 'borussia dortmund', 'manchester united', 'inter milan', 'ac milan', 'juventus', 'atletico madrid')
+            AND LOWER(away.Name) IN ('real madrid', 'barcelona', 'manchester city', 'liverpool', 'arsenal', 'bayern munich', 'psg', 'chelsea', 'borussia dortmund', 'manchester united', 'inter milan', 'ac milan', 'juventus', 'atletico madrid'))
+          THEN 0
+          WHEN (LOWER(home.Name) IN ('real madrid', 'barcelona', 'manchester city', 'liverpool', 'arsenal', 'bayern munich', 'psg', 'chelsea', 'borussia dortmund', 'manchester united', 'inter milan', 'ac milan', 'juventus', 'atletico madrid')
+             OR LOWER(away.Name) IN ('real madrid', 'barcelona', 'manchester city', 'liverpool', 'arsenal', 'bayern munich', 'psg', 'chelsea', 'borussia dortmund', 'manchester united', 'inter milan', 'ac milan', 'juventus', 'atletico madrid'))
+          THEN 1
+          WHEN t.Name IN ('UEFA Champions League', 'Champions League', 'Premier League', 'La Liga', 'Bundesliga', 'Serie A') THEN 2
+          ELSE 3
+        END ASC,
+        m.MatchDate DESC
+    `;
+
+    const { rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NOT NULL OR m.MatchID IN (1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,991,993,994) ${ORDER_PRIORITY_SQL}`);
     databaseRows = rows;
     if (rows.length > 0) {
       const cache = await pool.query(`SELECT Payload, FetchedAt FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = 'fixtures'`);
@@ -772,10 +816,26 @@ export async function getPopularFixtures() {
   }
 
   try {
-    let { rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NOT NULL ORDER BY m.MatchDate DESC LIMIT 12`);
+    let { rows } = await pool.query(`
+      ${BASE_QUERY}
+      WHERE m.ApiFixtureID IS NOT NULL OR m.MatchID IN (1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,991,993,994)
+      ORDER BY
+        CASE
+          WHEN (LOWER(home.Name) IN ('real madrid', 'barcelona', 'manchester city', 'liverpool', 'arsenal', 'bayern munich', 'psg', 'chelsea', 'borussia dortmund', 'manchester united', 'inter milan', 'ac milan', 'juventus', 'atletico madrid')
+            AND LOWER(away.Name) IN ('real madrid', 'barcelona', 'manchester city', 'liverpool', 'arsenal', 'bayern munich', 'psg', 'chelsea', 'borussia dortmund', 'manchester united', 'inter milan', 'ac milan', 'juventus', 'atletico madrid'))
+          THEN 0
+          WHEN (LOWER(home.Name) IN ('real madrid', 'barcelona', 'manchester city', 'liverpool', 'arsenal', 'bayern munich', 'psg', 'chelsea', 'borussia dortmund', 'manchester united', 'inter milan', 'ac milan', 'juventus', 'atletico madrid')
+             OR LOWER(away.Name) IN ('real madrid', 'barcelona', 'manchester city', 'liverpool', 'arsenal', 'bayern munich', 'psg', 'chelsea', 'borussia dortmund', 'manchester united', 'inter milan', 'ac milan', 'juventus', 'atletico madrid'))
+          THEN 1
+          WHEN t.Name IN ('UEFA Champions League', 'Champions League', 'Premier League', 'La Liga', 'Bundesliga', 'Serie A') THEN 2
+          ELSE 3
+        END ASC,
+        m.MatchDate DESC
+      LIMIT 15
+    `);
     if (rows.length === 0) {
       await getFixtures();
-      ({ rows } = await pool.query(`${BASE_QUERY} WHERE m.ApiFixtureID IS NOT NULL ORDER BY m.MatchDate DESC LIMIT 12`));
+      ({ rows } = await pool.query(`${BASE_QUERY} ORDER BY m.MatchDate DESC LIMIT 15`));
     }
     if (rows.length > 0) {
       const result = { response: sortByLeague(rows.map(mapDbRow)) };

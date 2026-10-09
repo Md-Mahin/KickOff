@@ -90,16 +90,22 @@ CREATE TABLE Standing (
 );
 
 CREATE TABLE Match (
-    MatchID       SERIAL PRIMARY KEY,
-    ApiFixtureID  BIGINT,
-    TournamentID  INT NOT NULL REFERENCES Tournament(TournamentID),
-    HomeTeamID    INT NOT NULL REFERENCES Team(TeamID),
-    AwayTeamID    INT NOT NULL REFERENCES Team(TeamID),
-    VenueID       INT REFERENCES Venue(VenueID),
-    MatchDate     TIMESTAMP,
-    HomeGoals     INT DEFAULT 0,
-    AwayGoals     INT DEFAULT 0,
-    CHECK (HomeTeamID <> AwayTeamID)
+    MatchID        SERIAL PRIMARY KEY,
+    ApiFixtureID   BIGINT,
+    TournamentID   INT NOT NULL REFERENCES Tournament(TournamentID),
+    HomeTeamID     INT NOT NULL REFERENCES Team(TeamID),
+    AwayTeamID     INT NOT NULL REFERENCES Team(TeamID),
+    VenueID        INT REFERENCES Venue(VenueID),
+    MatchDate      TIMESTAMP,
+    HomeGoals      INT DEFAULT 0,
+    AwayGoals      INT DEFAULT 0,
+    round_status   VARCHAR(20) DEFAULT 'league' NOT NULL CHECK (round_status IN ('league', 'knockout')),
+    round_position VARCHAR(10),
+    CHECK (HomeTeamID <> AwayTeamID),
+    CHECK (
+        (round_status = 'league' AND round_position IS NULL) OR
+        (round_status = 'knockout' AND round_position IS NOT NULL AND round_position IN ('RO32', 'RO16', 'QF', 'SF', 'GF'))
+    )
 );
 CREATE UNIQUE INDEX uq_match_api_fixture_id
     ON Match(ApiFixtureID) WHERE ApiFixtureID IS NOT NULL;
@@ -352,15 +358,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ============================================================================
+--trigger check kore match e thik moto lineup ashche ki na uporer function etate lagai kaaje
+-- ============================================================================
+
 CREATE TRIGGER trg_lineup_team_check
 BEFORE INSERT OR UPDATE ON Lineup
 FOR EACH ROW EXECUTE FUNCTION check_lineup_team_in_match();
 
--- ============================================================================
--- TRIGGER: trg_match_club_country_check
--- Strictly enforces that club teams only play clubs and national teams only
--- play national teams. A matchup between a club and national team is forbidden.
--- ============================================================================
+
 CREATE OR REPLACE FUNCTION fn_check_match_team_types()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -453,9 +459,9 @@ LEFT JOIN Keyword k ON k.KeywordID = nk.KeywordID
 LEFT JOIN Comment c ON c.NewsID = n.NewsID
 GROUP BY n.NewsID, n.Title, n.PublishedAt;
 
--- ============================================================================
+
 -- Aggregated Season-Level Statistics View
--- ============================================================================
+
 CREATE OR REPLACE VIEW PlayerSeasonStatsView AS
 SELECT
     p.PlayerID,
@@ -498,14 +504,14 @@ LEFT JOIN LATERAL (
 ) tm ON true
 GROUP BY p.PlayerID, p.Name, p.Position, p.Photo, p.OverallRating, tm.TeamID, tm.TeamName;
 
--- ============================================================================
--- PL/SQL Stored Procedure: Update All Player Performance Ratings (0 - 10 scale)
--- ============================================================================
+
+-- player rating update in 1 to 10
+
 CREATE OR REPLACE PROCEDURE update_all_player_ratings(p_season VARCHAR DEFAULT '2025/2026')
 LANGUAGE plpgsql
 AS $$
 DECLARE
-    -- Cohort maximums for normalization
+    -- normalize kore mathematical jinis idk ki
     v_max_goals_f INT;
     v_max_assists_f INT;
     v_max_shots_f INT;
@@ -553,7 +559,8 @@ DECLARE
     v_final_rating NUMERIC(4, 2);
     v_current_rank INT := 0;
 BEGIN
-    -- 1. Compute cohort maxima
+    --mathematical part dhaar kore neya
+
     SELECT
         COALESCE(MAX(tot_goals), 1),
         COALESCE(MAX(tot_assists), 1),
@@ -783,9 +790,9 @@ BEGIN
 END;
 $$;
 
--- ============================================================================
+
 -- Shadow Tables for Sensitive Action Auditing
--- ============================================================================
+
 CREATE TABLE IF NOT EXISTS PlayerTransferAudit (
     AuditID SERIAL PRIMARY KEY,
     PlayerID INT NOT NULL REFERENCES Player(PlayerID) ON DELETE CASCADE,
@@ -809,7 +816,7 @@ CREATE TABLE IF NOT EXISTS SecurityAuditLog (
 CREATE INDEX IF NOT EXISTS idx_security_audit_user ON SecurityAuditLog(UserID);
 
 -- ============================================================================
--- Triggers: Transfer Sync & Security Shadow Audits
+-- transfer control korbo
 -- ============================================================================
 CREATE OR REPLACE FUNCTION trg_fn_sync_player_transfer() RETURNS TRIGGER AS $$
 BEGIN
@@ -864,10 +871,10 @@ AFTER UPDATE ON Users
 FOR EACH ROW EXECUTE FUNCTION trg_fn_user_security_audit();
 
 -- ============================================================================
--- Functions: Statistical & Computed Values
+-- performance er score
 -- ============================================================================
 
--- Function 1: Compute statistical performance rating for a player (0 - 10 scale)
+-- a player (0 - 10 scale)
 CREATE OR REPLACE FUNCTION fn_calculate_player_rating(p_player_id INT)
 RETURNS NUMERIC(4, 2) AS $$
 DECLARE
@@ -972,7 +979,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function 2: Compute statistical win ratio for a team
+-- win ratio for a team
 CREATE OR REPLACE FUNCTION fn_get_team_win_ratio(p_team_id INT, p_tournament_id INT DEFAULT NULL)
 RETURNS NUMERIC(5, 2) AS $$
 DECLARE
@@ -1000,7 +1007,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function 3: Compute player recent form (average rating over last N matches)
+--player form formula disi
 CREATE OR REPLACE FUNCTION fn_get_player_form(p_player_id INT, p_last_n INT DEFAULT 5)
 RETURNS NUMERIC(4, 2) AS $$
 DECLARE
@@ -1020,9 +1027,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- ============================================================================
--- Procedure: Multi-Step Player Transfer Workflow
--- ============================================================================
+
+-- tranfer process korar jonno
+
+
 CREATE OR REPLACE PROCEDURE sp_process_player_transfer(
     p_player_id INT,
     p_new_team_id INT,

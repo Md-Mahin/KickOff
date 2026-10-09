@@ -132,14 +132,12 @@ export function MatchList({ leagues }: { leagues: LeagueGroup[] }) {
   return (
     <div>
       {/* Filter bar */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 mb-8 overflow-x-auto pb-1">
         <FilterBtn value="all" label="All" count={allMatches.length} />
         <FilterBtn value="live" label="Live" count={liveCount} />
         <FilterBtn value="finished" label="Finished" count={ftCount} />
         <FilterBtn value="upcoming" label="Upcoming" count={upcomingCount} />
       </div>
-
-      <Separator className="my-6" />
 
       {/* Match groups */}
       <div className="space-y-8">

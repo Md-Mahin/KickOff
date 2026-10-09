@@ -94,27 +94,27 @@ export default function GlobalSearch() {
       {/* Collapsed State (Header Trigger) */}
       <button
         onClick={() => setIsOpen(true)}
-        className="flex h-9 w-full sm:w-64 items-center justify-between rounded-full bg-gray-900 px-3 text-sm text-gray-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/20 transition-colors"
+        className="flex h-9 w-full sm:w-64 items-center justify-between rounded-full bg-gray-900 dark:bg-[#1d042f] border border-transparent dark:border-[#621298]/50 hover:dark:border-[#621298] px-3 text-sm text-gray-400 dark:text-slate-300 hover:text-white focus:outline-none focus:ring-2 focus:ring-[#621298]/40 transition-all"
       >
         <div className="flex items-center gap-2">
-          <Search className="h-4 w-4" />
+          <Search className="h-4 w-4 text-gray-400 dark:text-purple-300" />
           <span>Search KickOff...</span>
         </div>
-        <kbd className="hidden sm:inline-block rounded bg-gray-800 px-1.5 py-0.5 text-xs font-semibold text-gray-400 font-sans border border-gray-700">
+        <kbd className="hidden sm:inline-block rounded bg-gray-800 dark:bg-[#3b0f59] px-1.5 py-0.5 text-xs font-semibold text-gray-400 dark:text-purple-200 font-sans border border-gray-700 dark:border-[#621298]/60">
           <span className="text-xs">Ctrl K</span>
         </kbd>
       </button>
 
       {/* Expanded State (Search Modal Overlay) */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-[calc(100vw-32px)] sm:w-[500px] origin-top-right rounded-xl bg-white shadow-2xl ring-1 ring-black/5 z-50 overflow-hidden flex flex-col">
+        <div className="absolute right-0 top-full mt-2 w-[calc(100vw-32px)] sm:w-[500px] origin-top-right rounded-xl bg-white dark:bg-[#230836] border border-gray-200 dark:border-[#621298]/50 shadow-2xl ring-1 ring-black/5 dark:ring-white/10 z-50 overflow-hidden flex flex-col">
           {/* Main Input */}
-          <div className="flex items-center border-b border-gray-100 px-4 py-3 shrink-0">
-            <Search className="h-5 w-5 text-gray-400 shrink-0" />
+          <div className="flex items-center border-b border-gray-100 dark:border-white/10 px-4 py-3 shrink-0">
+            <Search className="h-5 w-5 text-gray-400 dark:text-purple-300 shrink-0" />
             <input
               ref={inputRef}
               type="text"
-              className="ml-3 flex-1 border-0 bg-transparent text-gray-900 placeholder-gray-500 focus:outline-none sm:text-sm"
+              className="ml-3 flex-1 border-0 bg-transparent text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-slate-400 focus:outline-none sm:text-sm"
               placeholder="Search matches, competitions, teams, players, and more"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
@@ -122,15 +122,15 @@ export default function GlobalSearch() {
           </div>
 
           {/* Filter Row */}
-          <div className="flex gap-2 overflow-x-auto border-b border-gray-100 px-4 py-3 shrink-0 scrollbar-hide [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="flex gap-2 overflow-x-auto border-b border-gray-100 dark:border-white/10 px-4 py-3 shrink-0 scrollbar-hide [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {FILTERS.map((filter) => (
               <button
                 key={filter}
                 onClick={() => setActiveFilter(filter)}
                 className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   activeFilter === filter
-                    ? "bg-gray-900 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    ? "bg-gray-900 dark:bg-[#621298] text-white shadow-sm"
+                    : "bg-gray-100 dark:bg-[#25083c] text-gray-600 dark:text-slate-300 hover:bg-gray-200 dark:hover:bg-[#340c52] dark:hover:text-white"
                 }`}
               >
                 {filter}
@@ -143,12 +143,12 @@ export default function GlobalSearch() {
             {loading ? (
               <div className="p-4 text-center text-sm text-gray-500">Searching...</div>
             ) : results.length === 0 && searchQuery.trim() !== "" ? (
-              <div className="p-4 text-center text-sm text-gray-500">No results found for "{searchQuery}"</div>
+              <div className="p-4 text-center text-sm text-gray-500 dark:text-slate-400">No results found for "{searchQuery}"</div>
             ) : (
               results.map((item) => (
                 <div
                   key={item.id}
-                  className="group flex items-center justify-between rounded-lg p-2 hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="group flex items-center justify-between rounded-lg p-2 hover:bg-gray-50 dark:hover:bg-[#280942]/60 cursor-pointer transition-colors"
                   onClick={() => {
                     if (item.type === "Team") {
                       router.push(`/team/${item.realId}`)
@@ -162,21 +162,21 @@ export default function GlobalSearch() {
                   }}
                 >
                   {/* Avatar */}
-                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={item.avatar} alt={item.name} className="h-full w-full object-cover" />
                   </div>
 
                   {/* Data Stack */}
                   <div className="ml-3 flex-1 min-w-0">
-                    <div className="flex items-center text-sm font-medium text-gray-900">
+                    <div className="flex items-center text-sm font-medium text-gray-900 dark:text-white">
                       <span className="truncate">{item.name}</span>
-                      <span className="ml-2 flex shrink-0 items-center text-xs text-gray-500">
+                      <span className="ml-2 flex shrink-0 items-center text-xs text-gray-500 dark:text-slate-400">
                         <Users className="mr-1 h-3 w-3" />
                         {item.followers}
                       </span>
                     </div>
-                    <div className="mt-0.5 text-xs text-gray-500 truncate flex items-center">
+                    <div className="mt-0.5 text-xs text-gray-500 dark:text-slate-400 truncate flex items-center">
                       {item.flag} {item.country} <span className="mx-1">•</span> ⚽ {item.sport} <span className="mx-1">•</span> {item.type}
                     </div>
                   </div>
