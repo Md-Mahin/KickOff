@@ -1,11 +1,8 @@
 import { pool } from "../db";
-import type {
-  DetailedMockMatch,
-  BasicMatchItem,
-} from "./mockMatchData";
-import { MOCK_BASIC_MATCHES } from "./mockMatchData";
+import type { MatchDetails, BasicMatchItem } from "./matchTypes";
 import { callApiFootball as requestApiFootball } from "./apiFootballClient";
 import { syncFixtureToDb, upsertApiPlayer, upsertApiTeam, upsertApiTournament } from "./footballService";
+import { syncSecondaryFootballProvidersToday } from "./secondaryFootballProviders";
 
 const todayStr = () => new Date().toISOString().split("T")[0];
 
@@ -29,7 +26,7 @@ async function markFixtureListSync(unavailable = false) {
 // Match lists are database-first; API-Football fills the DB only when today's rows are missing.
 // ============================================================================
 export async function getBasicMatchList(): Promise<{
-  source: "Database" | "Mock Fallback";
+  source: "Database";
   matches: BasicMatchItem[];
 }> {
   const today = todayStr();
@@ -86,6 +83,21 @@ export async function getBasicMatchList(): Promise<{
       return { source: "Database", matches: syncedRows.map((r: any) => mapBasicMatch(r)) };
     }
 
+    if (Array.isArray(items) && items.length === 0 && (process.env.FOOTBALL_DATA_TOKEN || process.env.SPORTSDB_API_KEY)) {
+      await syncSecondaryFootballProvidersToday();
+      const { rows } = await pool.query(`
+        SELECT COALESCE(m.ApiFixtureID, m.MatchID) AS MatchID, m.MatchDate, m.HomeGoals, m.AwayGoals,
+          t.TournamentID, t.Name AS TournamentName,
+          h.TeamID AS HomeTeamID, h.Name AS HomeTeamName, h.Logo AS HomeLogo,
+          a.TeamID AS AwayTeamID, a.Name AS AwayTeamName, a.Logo AS AwayLogo
+        FROM Match m JOIN Tournament t ON t.TournamentID = m.TournamentID
+        JOIN Team h ON h.TeamID = m.HomeTeamID JOIN Team a ON a.TeamID = m.AwayTeamID
+        WHERE m.ApiFixtureID IS NOT NULL AND m.MatchDate::date = $1::date ORDER BY m.MatchDate
+      `, [today]);
+      await markFixtureListSync();
+      return { source: "Database", matches: rows.map((r: any) => mapBasicMatch(r)) };
+    }
+
     if (Array.isArray(items)) {
       await markFixtureListSync();
       return { source: "Database", matches: databaseRows.map((r: any) => mapBasicMatch(r)) };
@@ -97,19 +109,17 @@ export async function getBasicMatchList(): Promise<{
       `[Basic Match List] API-Football unavailable; using database data when available (${(error as Error).message}).`
     );
     if (databaseRows.length) return { source: "Database", matches: databaseRows.map((r: any) => mapBasicMatch(r)) };
-    try {
-      const { rows } = await pool.query(`
-        SELECT m.MatchID, m.MatchDate, m.HomeGoals, m.AwayGoals,
-          t.TournamentID, t.Name AS TournamentName,
-          h.TeamID AS HomeTeamID, h.Name AS HomeTeamName, h.Logo AS HomeLogo,
-          a.TeamID AS AwayTeamID, a.Name AS AwayTeamName, a.Logo AS AwayLogo
-        FROM Match m JOIN Tournament t ON t.TournamentID = m.TournamentID
-        JOIN Team h ON h.TeamID = m.HomeTeamID JOIN Team a ON a.TeamID = m.AwayTeamID
-        WHERE m.ApiFixtureID IS NULL AND m.MatchDate::date = $1::date ORDER BY m.MatchDate
-      `, [today]);
-      if (rows.length) return { source: "Mock Fallback", matches: rows.map((r: any) => mapBasicMatch(r)) };
-    } catch { }
-    return { source: "Mock Fallback", matches: MOCK_BASIC_MATCHES };
+    await syncSecondaryFootballProvidersToday();
+    const { rows } = await pool.query(`
+      SELECT COALESCE(m.ApiFixtureID, m.MatchID) AS MatchID, m.MatchDate, m.HomeGoals, m.AwayGoals,
+        t.TournamentID, t.Name AS TournamentName,
+        h.TeamID AS HomeTeamID, h.Name AS HomeTeamName, h.Logo AS HomeLogo,
+        a.TeamID AS AwayTeamID, a.Name AS AwayTeamName, a.Logo AS AwayLogo
+      FROM Match m JOIN Tournament t ON t.TournamentID = m.TournamentID
+      JOIN Team h ON h.TeamID = m.HomeTeamID JOIN Team a ON a.TeamID = m.AwayTeamID
+      WHERE m.ApiFixtureID IS NOT NULL AND m.MatchDate::date = $1::date ORDER BY m.MatchDate
+    `, [today]);
+    return { source: "Database", matches: rows.map((r: any) => mapBasicMatch(r)) };
   }
 }
 
@@ -126,19 +136,13 @@ function mapBasicMatch(r: any): BasicMatchItem {
   };
 }
 
-<<<<<<< HEAD
-// ============================================================================
-// 2. DB SYNC 
-// ============================================================================
-=======
 // 
 // 2. Database synchronization for API-backed detail data.
 // 
->>>>>>> 71f7fbc6b631673b050cacf04693a6eb7d0af166
 
 export async function persistMatchDetailsToDatabase(
   matchId: number,
-  data: DetailedMockMatch
+  data: MatchDetails
 ): Promise<void> {
   const { fixture, league, teams, goals, lineups, events } = data;
 
@@ -642,7 +646,7 @@ async function hydrateMatch(matchId: number) {
     fixture: { id: Number(item.fixture.id), date: item.fixture.date, venue: item.fixture.venue ?? null, referee: item.fixture.referee, status: item.fixture.status },
     league: { id: Number(item.league.id), name: item.league.name, country: item.league.country, season: item.league.season },
     teams: { home: item.teams.home, away: item.teams.away }, goals: item.goals, lineups: [], events: [],
-  } as DetailedMockMatch;
+  } as MatchDetails;
   await syncFixtureToDb(item);
   await persistMatchDetailsToDatabase(matchId, rawData);
   dbData = await pullMatchDetailsFromDatabase(matchId);
@@ -687,7 +691,7 @@ async function loadCachedMatchEndpoint(matchId: number, endpoint: 'events' | 'li
         },
         teams: dbData.teams, goals: dbData.goals,
         lineups: payload, events: [],
-      } as DetailedMockMatch);
+      } as MatchDetails);
       cachedMatch = await pullMatchDetailsFromDatabase(fixtureId) ?? dbData;
       console.log('[DB] Cached lineup image URLs repaired');
     }
@@ -716,7 +720,7 @@ async function loadCachedMatchEndpoint(matchId: number, endpoint: 'events' | 'li
       fixture: { id: dbData.fixture.id, date: dbData.fixture.date, venue: dbData.fixture.venue, status: dbData.fixture.status },
       league: dbData.league, teams: dbData.teams, goals: dbData.goals,
       lineups: endpoint === 'lineups' ? fresh : [], events: endpoint === 'events' ? fresh : [],
-    } as DetailedMockMatch;
+    } as MatchDetails;
     await persistMatchDetailsToDatabase(fixtureId, detail);
     await pool.query(`INSERT INTO MatchApiCache (MatchID, Endpoint, Payload, FetchedAt)
       VALUES ($1, $2, $3::jsonb, CURRENT_TIMESTAMP)

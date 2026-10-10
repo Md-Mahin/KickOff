@@ -19,7 +19,8 @@ router.get("/", async (req, res) => {
     // Search Teams
     if (filter === "All" || filter === "Team") {
       const teamRes = await pool.query(`
-        SELECT t.TeamID as id, t.Name as name, c.Name as country
+        SELECT t.TeamID as id, t.Name as name, c.Name as country,
+          (SELECT COUNT(*)::int FROM UserFollowsTeam f WHERE f.TeamID = t.TeamID) AS followers
         FROM Team t
         LEFT JOIN Country c ON t.CountryID = c.CountryID
         WHERE t.Name ILIKE $1
@@ -30,7 +31,7 @@ router.get("/", async (req, res) => {
         id: `team-${r.id}`,
         realId: r.id,
         name: r.name,
-        followers: "1.2M", // Mocked
+        followers: r.followers,
         country: r.country || "Unknown",
         flag: "🌍",
         sport: "Football",
@@ -42,7 +43,8 @@ router.get("/", async (req, res) => {
     // Search Players
     if (filter === "All" || filter === "Player") {
       const playerRes = await pool.query(`
-        SELECT p.PlayerID as id, p.Name as name, c.Name as country
+        SELECT p.PlayerID as id, p.Name as name, c.Name as country,
+          (SELECT COUNT(*)::int FROM UserFollowsPlayer f WHERE f.PlayerID = p.PlayerID) AS followers
         FROM Player p
         LEFT JOIN Country c ON p.NationalityCountryID = c.CountryID
         WHERE p.Name ILIKE $1
@@ -53,7 +55,7 @@ router.get("/", async (req, res) => {
         id: `player-${r.id}`,
         realId: r.id,
         name: r.name,
-        followers: "800K", // Mocked
+        followers: r.followers,
         country: r.country || "Unknown",
         flag: "🌍",
         sport: "Football",
@@ -65,9 +67,10 @@ router.get("/", async (req, res) => {
     // Search Tournaments
     if (filter === "All" || filter === "Competition") {
       const compRes = await pool.query(`
-        SELECT TournamentID as id, Name as name
-        FROM Tournament
-        WHERE Name ILIKE $1
+        SELECT t.TournamentID as id, t.Name as name,
+          (SELECT COUNT(*)::int FROM UserFollowsTournament f WHERE f.TournamentID = t.TournamentID) AS followers
+        FROM Tournament t
+        WHERE t.Name ILIKE $1
         LIMIT 5
       `, [searchParam]);
       
@@ -75,7 +78,7 @@ router.get("/", async (req, res) => {
         id: `comp-${r.id}`,
         realId: r.id,
         name: r.name,
-        followers: "500K",
+        followers: r.followers,
         country: "International",
         flag: "🏆",
         sport: "Football",

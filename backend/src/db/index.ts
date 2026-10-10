@@ -2,7 +2,6 @@
 import { Pool, PoolClient } from "pg";
 import dotenv from "dotenv";
 import path from "path";
-import fs from "fs";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
@@ -520,18 +519,6 @@ export async function initializeDatabase() {
   `);
 
   try {
-    const matchCountRes = await pool.query(`SELECT COUNT(*) FROM Match`);
-    if (parseInt(matchCountRes.rows[0].count, 10) < 10) {
-      console.log("Database has fewer than 10 matches. Populating full match schedule from seed.sql...");
-      const seedSqlPath = path.resolve(__dirname, "../../database/seed.sql");
-      if (fs.existsSync(seedSqlPath)) {
-        const seedSql = fs.readFileSync(seedSqlPath, "utf-8");
-        await pool.query(seedSql);
-        console.log("Successfully populated 18 matches, squads, and standings!");
-      }
-    }
-
-  
     const adminCheck = await pool.query(`SELECT 1 FROM Users WHERE Role = 'admin' LIMIT 1`);
     if (adminCheck.rows.length === 0) {
       console.log("No administrator user found. Auto-creating default admin accounts...");
@@ -552,14 +539,6 @@ export async function initializeDatabase() {
       console.log("Admin accounts ready: admin@kickoff.com / admin2@kickoff.com (password: AdminPassword123!)");
     }
 
-    // Auto-provision player match stats and compute ratings if empty
-    const statsCheck = await pool.query(`SELECT COUNT(*) FROM PlayerMatchStat`);
-    if (parseInt(statsCheck.rows[0].count, 10) === 0) {
-      console.log("PlayerMatchStat table is empty. Generating match statistics & calculating initial ratings...");
-      const { autoSeedPlayerMatchStats } = require("./autoSeedStats");
-      await autoSeedPlayerMatchStats(pool);
-      console.log("Player match stats and performance ratings generated successfully!");
-    }
   } catch (err) {
     console.warn("Auto-provision check warning:", (err as Error).message);
   }

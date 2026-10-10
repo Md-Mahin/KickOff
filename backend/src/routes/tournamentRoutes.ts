@@ -30,8 +30,8 @@ router.get("/:id", optionalAuth, async (req, res) => {
       name: tRow.name,
       type: tRow.type,
       edition: tRow.edition,
-      logo: `https://ui-avatars.com/api/?name=${encodeURIComponent(tRow.name)}&background=random&color=fff&size=128`, // Mock logo
-      country: "Europe", // Mock region/country
+      logo: null,
+      country: null,
     };
 
     // 2. Followers & Following status
@@ -126,7 +126,7 @@ router.get("/:id", optionalAuth, async (req, res) => {
       goalsAgainst: row.goalsagainst || 0,
       goalDifference: (row.goalsfor || 0) - (row.goalsagainst || 0),
       points: row.points || 0,
-      last5: ["W", "D", "W", "L", "W"] // Mock since we don't have historical match sequence per team easily
+      last5: []
     }));
 
     res.json({

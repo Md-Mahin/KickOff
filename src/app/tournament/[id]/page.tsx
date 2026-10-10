@@ -3,7 +3,6 @@ import { ChevronDown } from "lucide-react"
 
 import FollowButton, { FollowersCountBadge } from "@/components/ui/follow-button"
 import { getTournamentProfile } from "@/lib/api"
-import type { TournamentProfile } from "@/lib/matches"
 import TournamentInteractiveContent from "@/components/tournament/tournament-interactive-content"
 
 export default async function TournamentProfilePage({
@@ -18,128 +17,8 @@ export default async function TournamentProfilePage({
     notFound()
   }
 
-  // Use real DB data, or fallback to Mock data if API isn't ready
-  let data = await getTournamentProfile(tournamentId)
-
-  // Fallback Mock Data with knockout matches for testing
-  if (!data) {
-    const fallback: TournamentProfile = {
-      tournament: {
-        id: tournamentId,
-        name: "UEFA Champions League",
-        type: "Club",
-        edition: "2026/2027",
-        logo: "https://ui-avatars.com/api/?name=UCL&background=random&color=fff&size=128",
-        country: "Europe",
-      },
-      followers: 1200000,
-      matches: [
-        {
-          id: 206,
-          date: new Date(Date.now() - 86400000 * 2).toISOString(),
-          status: "FT",
-          round_status: "knockout",
-          round_position: "GF",
-          homeTeam: { id: 1, name: "Real Madrid", logo: null },
-          awayTeam: { id: 2, name: "Barcelona", logo: null },
-          homeGoals: 3,
-          awayGoals: 2,
-          result: "W",
-          tournament: "UEFA Champions League",
-          venue: null,
-        },
-        {
-          id: 210,
-          date: new Date(Date.now() - 86400000 * 5).toISOString(),
-          status: "FT",
-          round_status: "knockout",
-          round_position: "SF",
-          homeTeam: { id: 3, name: "PSG", logo: null },
-          awayTeam: { id: 1, name: "Real Madrid", logo: null },
-          homeGoals: 2,
-          awayGoals: 3,
-          result: "L",
-          tournament: "UEFA Champions League",
-          venue: null,
-        },
-        {
-          id: 14,
-          date: new Date(Date.now() - 86400000 * 6).toISOString(),
-          status: "FT",
-          round_status: "knockout",
-          round_position: "SF",
-          homeTeam: { id: 4, name: "AC Milan", logo: null },
-          awayTeam: { id: 5, name: "Inter Milan", logo: null },
-          homeGoals: 0,
-          awayGoals: 0,
-          result: "D",
-          tournament: "UEFA Champions League",
-          venue: null,
-        },
-        {
-          id: 16,
-          date: new Date(Date.now() - 86400000 * 12).toISOString(),
-          status: "FT",
-          round_status: "knockout",
-          round_position: "QF",
-          homeTeam: { id: 5, name: "Inter Milan", logo: null },
-          awayTeam: { id: 6, name: "Juventus", logo: null },
-          homeGoals: 2,
-          awayGoals: 1,
-          result: "W",
-          tournament: "UEFA Champions League",
-          venue: null,
-        },
-        {
-          id: 991,
-          date: new Date(Date.now() + 86400000).toISOString(),
-          status: "UPCOMING",
-          round_status: "league",
-          round_position: null,
-          homeTeam: { id: 1, name: "Real Madrid", logo: null },
-          awayTeam: { id: 7, name: "Man City", logo: null },
-          homeGoals: 0,
-          awayGoals: 0,
-          result: null,
-          tournament: "UEFA Champions League",
-          venue: null,
-        },
-      ],
-      standings: [
-        {
-          rank: 1,
-          teamId: 1,
-          teamName: "Real Madrid",
-          teamLogo: null,
-          played: 6,
-          wins: 6,
-          draws: 0,
-          losses: 0,
-          goalsFor: 16,
-          goalsAgainst: 7,
-          goalDifference: 9,
-          points: 18,
-          last5: ["W", "W", "W", "W", "W"],
-        },
-        {
-          rank: 2,
-          teamId: 3,
-          teamName: "PSG",
-          teamLogo: null,
-          played: 6,
-          wins: 4,
-          draws: 1,
-          losses: 1,
-          goalsFor: 12,
-          goalsAgainst: 6,
-          goalDifference: 6,
-          points: 13,
-          last5: ["W", "W", "D", "W", "L"],
-        },
-      ],
-    }
-    data = fallback
-  }
+  const data = await getTournamentProfile(tournamentId)
+  if (!data) notFound()
 
   const { tournament, followers, matches, standings } = data
 
@@ -154,10 +33,7 @@ export default async function TournamentProfilePage({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={
-                    tournament.logo ??
-                    `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                      tournament.name
-                    )}&background=random&color=fff&size=128`
+                    tournament.logo ?? ""
                   }
                   alt={tournament.name}
                   className="max-h-full max-w-full object-contain"

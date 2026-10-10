@@ -68,12 +68,7 @@ export default async function PlayerPage({
   const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=random&color=fff&size=256`
   const followersFormatted = followers >= 1000000 ? (followers / 1000000).toFixed(1) + "M" : followers >= 1000 ? (followers / 1000).toFixed(1) + "K" : followers
 
-  // Mocked physical traits for UI consistency based on player ID
-  const height = 175 + (playerId % 15) // Mock between 175cm - 190cm
-  const foot = playerId % 2 === 0 ? "Right" : "Left"
-  const jersey = (playerId % 99) + 1 // Mock 1 - 99
-  const position = club?.position ?? "Midfielder"
-  const marketValue = 5 + (playerId % 95) // Mock 5M - 100M
+  const position = club?.position ?? "Unknown"
 
   return (
     <div className="min-h-screen text-foreground">
@@ -136,13 +131,13 @@ export default async function PlayerPage({
                       <span className="font-semibold text-foreground">Position:</span> {position}
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="font-semibold text-foreground">Height:</span> {height} cm
+                      <span className="font-semibold text-foreground">Height:</span> Not available
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="font-semibold text-foreground">Foot:</span> {foot}
+                      <span className="font-semibold text-foreground">Foot:</span> Not available
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="font-semibold text-foreground">No:</span> {jersey}
+                      <span className="font-semibold text-foreground">No:</span> Not available
                     </span>
                   </div>
                 </div>
@@ -195,11 +190,7 @@ export default async function PlayerPage({
               <CardContent className="p-6">
                 <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Market Value</h3>
                 <div className="flex items-center gap-3">
-                  <span className="text-4xl font-bold">{marketValue}M €</span>
-                  <span className="flex items-center text-sm font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
-                    <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
-                    +5.2%
-                  </span>
+                  <span className="text-lg font-medium text-muted-foreground">Not available</span>
                 </div>
               </CardContent>
             </Card>

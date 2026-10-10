@@ -599,7 +599,7 @@ export async function recalculatePlayerRatings(): Promise<{
   return res.json()
 }
 
-// ── Strict Pipeline & Fallback Match APIs ────────────────────────────────────
+// ── Database-backed Match APIs ───────────────────────────────────────────────
 
 export type BasicMatchItem = {
   id: number
@@ -620,7 +620,7 @@ export type BasicMatchItem = {
 }
 
 export type BasicMatchesResult = {
-  source: "Database" | "API-Football" | "Mock Fallback"
+  source: "Database"
   matches: BasicMatchItem[]
 }
 

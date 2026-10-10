@@ -2,7 +2,6 @@
 import { Router } from "express";
 import { pool } from "../db";
 import { optionalAuth } from "../middleware/auth";
-import { getCoachForTeam } from "../services/coachData";
 
 const router = Router();
 
@@ -34,9 +33,8 @@ router.get("/:id", optionalAuth, async (req, res) => {
     }
 
     const teamRow = teamResult.rows[0];
-    const fallbackCoach = getCoachForTeam(teamId, teamRow.name);
-    const managerName = teamRow.coachname || fallbackCoach.name;
-    const managerPhoto = teamRow.coachphoto || fallbackCoach.photo;
+    const managerName = teamRow.coachname ?? null;
+    const managerPhoto = teamRow.coachphoto ?? null;
 
     // Follower count (actual users who follow this team in UserFollowsTeam)
     const followersResult = await pool.query(

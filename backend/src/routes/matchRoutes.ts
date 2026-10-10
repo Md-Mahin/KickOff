@@ -17,7 +17,7 @@ const router = Router();
 // ============================================================================
 // 1. Initial Page Load: Basic Match List
 // Fetches only teams and match status (LIVE, FT, UPCOMING)
-// Fallback: Uses backup mock data ONLY if API-Football call fails
+// Provider responses are persisted before the database-backed result is returned.
 // ============================================================================
 router.get("/basic", async (_req: Request, res: Response) => {
   try {
@@ -75,7 +75,7 @@ router.get("/", optionalAuth, async (req: Request, res: Response) => {
 // ============================================================================
 // 2. User Interaction: Click on Match -> Trigger Detailed Data Fetch
 // Database Caching Strategy (Strict Pipeline):
-//   1. Call API-Football for detailed data (Fallback to mock data on failure)
+//   1. Call configured provider for detailed data
 //   2. Put and fill up the database with this data
 //   3. Pull and show the data to the user DIRECTLY from the database
 // ============================================================================
@@ -130,7 +130,7 @@ router.get("/:id", async (req: Request, res: Response) => {
     const id = Number(req.params.id);
     if (Number.isNaN(id)) return res.status(400).json({ message: "Invalid match ID" });
 
-    // Use pipeline: 1. API/Mock -> 2. Store to DB -> 3. Return from DB
+    // Use pipeline: 1. API -> 2. Store to DB -> 3. Return from DB
     const match = await pullMatchDetailsFromDatabase(id);
     if (!match) return res.status(404).json({ message: "Match not found" });
 
