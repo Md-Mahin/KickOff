@@ -174,8 +174,8 @@ CREATE TABLE Event (
     EventType     VARCHAR(20) NOT NULL CHECK (EventType IN ('Goal','Card','Foul','Substitution'))
 );
 
--- API quota accounting and negative-result caching prevent repeat API calls
--- when a fixture has no published events/lineups yet.
+-- repeat api call theke safe thakar jonno 
+-- lineup deyar age .
 CREATE TABLE ApiFootballDailyUsage (
     UsageDate DATE PRIMARY KEY DEFAULT CURRENT_DATE,
     RequestCount INTEGER NOT NULL DEFAULT 0,
@@ -359,7 +359,7 @@ FOR EACH ROW EXECUTE FUNCTION check_lineup_team_in_match();
 -- ============================================================================
 -- TRIGGER: trg_match_club_country_check
 -- Strictly enforces that club teams only play clubs and national teams only
--- play national teams. A matchup between a club and national team is forbidden.
+-- play national teams. A match between national team and club team is not possible 
 -- ============================================================================
 CREATE OR REPLACE FUNCTION fn_check_match_team_types()
 RETURNS TRIGGER AS $$
@@ -972,7 +972,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function 2: Compute statistical win ratio for a team
+-- Function 2: win ratio dekhe ekta team er 
 CREATE OR REPLACE FUNCTION fn_get_team_win_ratio(p_team_id INT, p_tournament_id INT DEFAULT NULL)
 RETURNS NUMERIC(5, 2) AS $$
 DECLARE
@@ -1000,7 +1000,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function 3: Compute player recent form (average rating over last N matches)
+-- Function 3: player er formm dekhe lsat N match porjonto form 
 CREATE OR REPLACE FUNCTION fn_get_player_form(p_player_id INT, p_last_n INT DEFAULT 5)
 RETURNS NUMERIC(4, 2) AS $$
 DECLARE
@@ -1021,7 +1021,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================================
--- Procedure: Multi-Step Player Transfer Workflow
+-- Procedure: player transfer hocche kina 
 -- ============================================================================
 CREATE OR REPLACE PROCEDURE sp_process_player_transfer(
     p_player_id INT,

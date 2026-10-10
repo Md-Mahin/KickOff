@@ -127,12 +127,9 @@ function mapBasicMatch(r: any): BasicMatchItem {
 }
 
 // ============================================================================
-// 2. Database synchronization for API-backed detail data.
+// 2. DB SYNC 
 // ============================================================================
 
-/**
- * Step 2: Put and fill up the database with the detailed match data
- */
 export async function persistMatchDetailsToDatabase(
   matchId: number,
   data: DetailedMockMatch
