@@ -131,14 +131,17 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
   } as MatchWithLeague & { events?: MatchEvent[]; lineups?: MatchLineup[]; _pipelineMetadata?: any }
 }
 
+const HIGH_VOLTAGE_FIXTURE_IDS = new Set([88001, 88002, 88003, 88004, 88005, 88006])
+
 const TOP_LEAGUE_ORDER = [
-  "premier league",
   "champions league",
+  "uefa champions league",
+  "premier league",
   "la liga",
-  "world cup",
   "bundesliga",
-  "ligue 1",
   "serie a",
+  "ligue 1",
+  "world cup",
   "europa league",
   "copa del rey",
   "copa america",
@@ -206,7 +209,21 @@ export async function getMatches(cookie?: string): Promise<LeagueGroup[]> {
     groups.set(key, group)
   }
 
-  return [...groups.values()]
+  const sortedGroups = [...groups.values()].sort((a, b) => {
+    return leagueOrder(a.league, a.country) - leagueOrder(b.league, b.country)
+  })
+
+  for (const group of sortedGroups) {
+    group.matches.sort((a, b) => {
+      const aHV = HIGH_VOLTAGE_FIXTURE_IDS.has(a.id)
+      const bHV = HIGH_VOLTAGE_FIXTURE_IDS.has(b.id)
+      if (aHV && !bHV) return -1
+      if (!aHV && bHV) return 1
+      return 0
+    })
+  }
+
+  return sortedGroups
 }
 
 export async function getMatchById(
@@ -237,7 +254,14 @@ export async function getPopularMatches(): Promise<MatchWithLeague[]> {
     const response = await fetch(`${API_URL}/api/matches/popular`, { cache: "no-store" })
     if (!response.ok) return []
     const data = (await response.json()) as { response?: ApiFixture[] }
-    return (data.response ?? []).map(toMatch)
+    const matches = (data.response ?? []).map(toMatch)
+    return matches.sort((a, b) => {
+      const aHV = HIGH_VOLTAGE_FIXTURE_IDS.has(a.id)
+      const bHV = HIGH_VOLTAGE_FIXTURE_IDS.has(b.id)
+      if (aHV && !bHV) return -1
+      if (!aHV && bHV) return 1
+      return (a.id - b.id)
+    })
   } catch {
     return []
   }

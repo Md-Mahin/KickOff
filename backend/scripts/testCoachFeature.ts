@@ -42,7 +42,7 @@ async function runTests() {
         throw new Error(`FAIL: Team ${t.name} has null CoachName!`);
       }
     }
-    console.log("✓ Test 2 Passed: All checked teams have authentic managers in Team table!");
+    console.log(" Test 2 Passed: All checked teams have authentic managers in Team table!");
 
     // Test 3: Test fallback & auto-caching behavior
     console.log("\n--- Test 3: Dynamic fallback and caching test ---");

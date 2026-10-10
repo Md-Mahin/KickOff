@@ -8,6 +8,7 @@ import { useEffect, useState } from "react"
 
 import GlobalSearch from "./global-search"
 import NotificationsMenu from "./notifications-menu"
+import ThemeToggle from "./theme-toggle"
 
 export default function Navbar() {
   const router = useRouter()
@@ -52,7 +53,7 @@ export default function Navbar() {
   }
 
   return (
-    <nav className="relative bg-gray-800">
+    <nav className="relative z-30 bg-gray-900 dark:bg-[#2b0844] shadow-[0_10px_30px_-5px_rgba(0,0,0,0.15)] dark:shadow-[0_16px_40px_-8px_rgba(0,0,0,0.9),0_6px_24px_rgba(98,18,152,0.38)] transition-all duration-200">
       <div className="mx-auto max-w-7xl px-2 sm:px-6 lg:px-8">
         <div className="relative flex h-16 items-center justify-between">
 
@@ -96,7 +97,7 @@ export default function Navbar() {
 
                 <Link
                   href="/"
-                  className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white"
+                  className="rounded-md bg-gray-900 dark:bg-[#621298] px-3 py-2 text-sm font-medium text-white transition-colors"
                 >
                   Dashboard
                 </Link>
@@ -116,18 +117,23 @@ export default function Navbar() {
           </div>
 
           {/* Right side */}
-          <div className="absolute inset-y-0 right-0 flex items-center pr-2 sm:static sm:inset-auto sm:ml-6 sm:pr-0">
+          <div className="absolute inset-y-0 right-0 flex items-center pr-2 sm:static sm:inset-auto sm:ml-6 sm:pr-0 gap-1.5 sm:gap-2">
 
             <GlobalSearch />
 
             {/* Notifications */}
             <NotificationsMenu signedIn={signedIn} />
 
+            {/* Dark Mode Switch */}
+            <div className="mx-1 flex items-center">
+              <ThemeToggle />
+            </div>
+
             {mounted
               ? signedIn
-                ? <button type="button" onClick={logout} className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Log out</button>
-                : <Link href="/sign-in" className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Sign in</Link>
-              : <Link href="/sign-in" className="ml-3 rounded-md bg-white px-3 py-1.5 text-sm font-semibold text-gray-900 transition hover:bg-gray-100">Sign in</Link>
+                ? <button type="button" onClick={logout} className="ml-2 rounded-md bg-white hover:bg-gray-100 text-gray-900 px-3 py-1.5 text-sm font-semibold transition shadow-sm">Log out</button>
+                : <Link href="/sign-in" className="ml-2 rounded-md bg-white hover:bg-gray-100 text-gray-900 px-3 py-1.5 text-sm font-semibold transition shadow-sm">Sign in</Link>
+              : <Link href="/sign-in" className="ml-2 rounded-md bg-white hover:bg-gray-100 text-gray-900 px-3 py-1.5 text-sm font-semibold transition shadow-sm">Sign in</Link>
             }
 
           </div>
@@ -140,7 +146,7 @@ export default function Navbar() {
 
           <Link
             href="/"
-            className="block rounded-md bg-gray-900 px-3 py-2 text-base font-medium text-white"
+            className="block rounded-md bg-gray-900 dark:bg-[#621298] px-3 py-2 text-base font-medium text-white transition-colors"
           >
             Dashboard
           </Link>
@@ -154,6 +160,11 @@ export default function Navbar() {
               ⚡ Admin Ratings
             </Link>
           )}
+
+          <div className="px-3 py-2 flex items-center justify-between border-t border-gray-700 dark:border-[#621298]/30 mt-2 pt-2">
+            <span className="text-sm font-medium text-gray-300 dark:text-purple-200">Theme</span>
+            <ThemeToggle />
+          </div>
 
         </div>
       </div>

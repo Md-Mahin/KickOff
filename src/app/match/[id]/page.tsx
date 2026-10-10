@@ -92,7 +92,7 @@ export default async function MatchPage({
         : []
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen text-foreground">
       <main className="mx-auto max-w-5xl px-4 py-8">
 
         {/* League & Data Pipeline Status */}

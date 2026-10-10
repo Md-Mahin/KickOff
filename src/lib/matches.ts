@@ -109,6 +109,8 @@ export type TeamMatch = {
   result: "W" | "L" | "D" | null
   tournament: string
   venue: string | null
+  round_status?: "league" | "knockout"
+  round_position?: "RO32" | "RO16" | "QF" | "SF" | "GF" | null
 }
 
 export type TeamStandingRow = {

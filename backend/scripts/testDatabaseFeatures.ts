@@ -19,10 +19,10 @@ async function runTests() {
   }
 
   try {
-    // 0. Ensure schema, triggers, functions, and procedures are initialized
+    // Ensure schema, triggers, functions, and procedures are initialized
     await initializeDatabase();
 
-    // ── 1. Explicit Transaction Control (COMMIT & ROLLBACK) ───────────────────
+    //  Explicit Transaction Control (COMMIT & ROLLBACK) ───────────────────
     console.log("--- 1. Testing Explicit Transaction Control (COMMIT & ROLLBACK) ---");
     
     // Test A: Successful Transaction (COMMIT)

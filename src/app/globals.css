@@ -2,7 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *, .dark, .dark *));
 
 @theme inline {
   --color-background: var(--background);
@@ -49,72 +49,76 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f8fafc;
+  --muted-foreground: #64748b;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --destructive: #ef4444;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --chart-1: #2563eb;
+  --chart-2: #64748b;
+  --chart-3: #94a3b8;
+  --chart-4: #cbd5e1;
+  --chart-5: #e2e8f0;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #2563eb;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #2563eb;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Dark mode: Main body is very darkish (#08010f), section blobs are purplish (#230836) */
+  --background: #08010f;
+  --foreground: #f8fafc;
+  --card: #230836;
+  --card-foreground: #f8fafc;
+  --popover: #230836;
+  --popover-foreground: #f8fafc;
+
+  /* Dark mode: blue of bright mode switches to #621298 */
+  --primary: #621298;
+  --primary-foreground: #ffffff;
+
+  --secondary: #2e0d46;
+  --secondary-foreground: #f8fafc;
+  --muted: #27093c;
+  --muted-foreground: #94a3b8;
+  --accent: #350f54;
+  --accent-foreground: #ffffff;
+  --destructive: #f87171;
+  --border: rgba(168, 85, 247, 0.2);
+  --input: rgba(98, 18, 152, 0.45);
+  --ring: #621298;
+  --chart-1: #621298;
+  --chart-2: #8b28cf;
+  --chart-3: #a855f7;
+  --chart-4: #38bdf8;
+  --chart-5: #34d399;
+  --sidebar: #2e0947;
+  --sidebar-foreground: #f8fafc;
+  --sidebar-primary: #621298;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #370d54;
+  --sidebar-accent-foreground: #f8fafc;
+  --sidebar-border: rgba(168, 85, 247, 0.25);
+  --sidebar-ring: #621298;
 }
 
 @layer base {
@@ -122,9 +126,183 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground transition-colors duration-200;
   }
   html {
     @apply font-sans;
   }
+}
+
+/* ── Dark Mode System Overrides ─────────────────────────────────────── */
+/* Main body is very darkish (#08010f), section blobs are purplish (#230836), */
+/* the navbar is rich purplish, and text contrast is clean and non-monochrome. */
+
+html.dark body {
+  background-color: #08010f !important;
+  color: #f8fafc !important;
+}
+
+/* Section blobs and card containers switch to purplish */
+.dark .bg-white {
+  background-color: #230836 !important;
+}
+
+/* Elevated purplish section blobs with depth */
+.dark .bg-card,
+.dark .bg-popover {
+  background-color: #230836 !important;
+  color: #f8fafc !important;
+}
+
+/* Sub-sections within blobs (table header strips, sub-panels) */
+.dark .bg-slate-50,
+.dark .bg-slate-50\/50,
+.dark .bg-slate-50\/60,
+.dark .bg-slate-50\/80,
+.dark .bg-slate-100,
+.dark .bg-gray-50,
+.dark .bg-gray-100 {
+  background-color: #2e0c46 !important;
+}
+
+.dark .bg-slate-200,
+.dark .bg-gray-200 {
+  background-color: #3b1057 !important;
+}
+
+/* Primary blue color of the bright mode switches to #621298 */
+.dark .bg-blue-600,
+.dark .bg-blue-500 {
+  background-color: #621298 !important;
+  color: #ffffff !important;
+}
+
+.dark .hover\:bg-blue-700:hover,
+.dark .hover\:bg-blue-600:hover {
+  background-color: #7819b5 !important;
+}
+
+.dark .border-blue-600,
+.dark .border-blue-500 {
+  border-color: #621298 !important;
+}
+
+.dark .bg-blue-50,
+.dark .bg-blue-100,
+.dark .bg-blue-50\/60 {
+  background-color: rgba(98, 18, 152, 0.28) !important;
+}
+
+/* Text links / highlights that were blue in bright mode */
+.dark .text-blue-600,
+.dark .text-blue-500 {
+  color: #c084fc !important;
+}
+
+.dark a.text-blue-600:hover,
+.dark a.text-blue-500:hover,
+.dark .hover\:text-blue-600:hover,
+.dark .hover\:text-blue-500:hover {
+  color: #e9d5ff !important;
+}
+
+/* Natural high-contrast neutral text scale (prevents monochrome purple haze) */
+.dark .text-slate-900,
+.dark .text-slate-800,
+.dark .text-gray-900,
+.dark .text-gray-800,
+.dark .text-black {
+  color: #ffffff !important;
+}
+
+.dark .text-slate-700,
+.dark .text-slate-600,
+.dark .text-gray-700,
+.dark .text-gray-600 {
+  color: #e2e8f0 !important;
+}
+
+.dark .text-slate-500,
+.dark .text-gray-500,
+.dark .text-slate-400,
+.dark .text-gray-400,
+.dark .text-muted-foreground {
+  color: #94a3b8 !important;
+}
+
+.dark .text-white {
+  color: #ffffff !important;
+}
+
+/* Preserving vibrant sports status colors (Green, Red, Amber, Cyan) */
+.dark .text-emerald-500,
+.dark .text-emerald-600,
+.dark .text-emerald-700 {
+  color: #34d399 !important;
+}
+
+.dark .text-red-500,
+.dark .text-red-600,
+.dark .text-red-700 {
+  color: #f87171 !important;
+}
+
+.dark .text-amber-500,
+.dark .text-amber-600,
+.dark .text-amber-400,
+.dark .text-amber-300 {
+  color: #fbbf24 !important;
+}
+
+/* Structural borders for purplish section blobs */
+.dark .border-border,
+.dark .border-slate-200,
+.dark .border-gray-200,
+.dark .border-slate-100,
+.dark .border-gray-100 {
+  border-color: rgba(168, 85, 247, 0.2) !important;
+}
+
+.dark .divide-border > :not([hidden]) ~ :not([hidden]),
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]),
+.dark .divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(168, 85, 247, 0.14) !important;
+}
+
+/* Interactive hovers: subtle purplish highlight */
+.dark .hover\:bg-slate-50:hover,
+.dark .hover\:bg-slate-100:hover,
+.dark .hover\:bg-gray-50:hover,
+.dark .hover\:bg-gray-100:hover,
+.dark .hover\:bg-muted\/30:hover,
+.dark .hover\:bg-muted\/40:hover,
+.dark .hover\:bg-muted\/50:hover {
+  background-color: rgba(168, 85, 247, 0.12) !important;
+}
+
+/* Dark mode form controls */
+.dark input[type="text"],
+.dark input[type="password"],
+.dark input[type="email"],
+.dark input[type="search"],
+.dark textarea,
+.dark select {
+  background-color: #1a052c !important;
+  color: #f8fafc !important;
+  border-color: rgba(168, 85, 247, 0.35) !important;
+}
+
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+/* Active solid dark pill buttons switch to #621298 */
+.dark button.bg-slate-900,
+.dark div.bg-slate-900,
+.dark button.bg-gray-900,
+.dark div.bg-gray-900 {
+  background-color: #621298 !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 12px rgba(98, 18, 152, 0.4) !important;
 }

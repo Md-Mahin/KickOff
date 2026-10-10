@@ -22,8 +22,7 @@ export { Pool };
 export type { PoolClient };
 
 /**
- * Helper to execute database operations within an explicit transaction.
- * Automatically issues BEGIN, commits on success, or issues ROLLBACK on failure.
+user dhukanor time e kaaj hole commit aar kaaj na hole rollback auto chalay dibe
  */
 export async function withTransaction<T>(
   callback: (client: PoolClient) => Promise<T>
@@ -532,7 +531,7 @@ export async function initializeDatabase() {
       }
     }
 
-    // Auto-provision admin accounts if missing (ensures teammates get working admin logins immediately)
+  
     const adminCheck = await pool.query(`SELECT 1 FROM Users WHERE Role = 'admin' LIMIT 1`);
     if (adminCheck.rows.length === 0) {
       console.log("No administrator user found. Auto-creating default admin accounts...");

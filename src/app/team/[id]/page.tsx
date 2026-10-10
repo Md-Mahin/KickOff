@@ -95,7 +95,7 @@ export default async function TeamPage({
   const avatarUrl = team.logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(team.name)}&background=0D8ABC&color=fff&size=128`
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen text-foreground">
       <main className="mx-auto max-w-7xl px-4 py-6">
 
         {/* ═══════════════════════ HERO CARD ═══════════════════════ */}

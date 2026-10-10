@@ -153,8 +153,14 @@ async function main() {
     console.log("No mismatched matches found!");
   }
 
+  /* trigger trigger lalala
+  aage ekta function banao diye ota ke trigger hishebe drop koro
+  */
+
   console.log("=== 5. Installing Trigger trg_match_club_country_check on Match Table ===");
   await pool.query(`
+    
+    
     CREATE OR REPLACE FUNCTION fn_check_match_team_types()
     RETURNS TRIGGER AS $$
     DECLARE
