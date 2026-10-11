@@ -22,7 +22,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:formation": "npx tsx scripts/testFormationLayout.ts"
+    "test:formation": "npx tsx scripts/testFormationLayout.ts",
+    "test:match-centre": "npm --prefix backend exec -- tsx scripts/testMatchCentre.ts"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

@@ -43,14 +43,14 @@ for (const [fmt, expected] of Object.entries(formationsToTest)) {
   );
 }
 
-// Fallback test
+// Missing/invalid source formation is not presented as a fabricated 4-3-3.
 assert(
-  JSON.stringify(parseFormationLines(null)) === JSON.stringify([4, 3, 3]),
-  `Null formation falls back to [4, 3, 3]`
+  JSON.stringify(parseFormationLines(null)) === JSON.stringify([]),
+  `Null formation remains unavailable`
 );
 assert(
-  JSON.stringify(parseFormationLines("invalid")) === JSON.stringify([4, 3, 3]),
-  `Invalid formation falls back to [4, 3, 3]`
+  JSON.stringify(parseFormationLines("invalid")) === JSON.stringify([]),
+  `Invalid formation remains unavailable`
 );
 
 // 2. Test layoutFormation with 4-2-3-1 (Bayern Munich mock data scenario)

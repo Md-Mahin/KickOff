@@ -31,13 +31,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("kickoff_theme");var p=window.matchMedia("(prefers-color-scheme: dark)").matches;if(t==="dark"||(!t&&p)){document.documentElement.classList.add("dark");}else{document.documentElement.classList.remove("dark");}}catch(e){}})();`,
-          }}
-        />
-      </head>
       <body suppressHydrationWarning className="min-h-full flex flex-col relative overflow-x-hidden bg-background text-foreground">
         <Navbar />
         <LegendaryBackground />

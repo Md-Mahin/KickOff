@@ -20,7 +20,7 @@ function MatchStatus({ match }: { match: Match }) {
     )
   }
   if (match.status === "FT") return <Badge variant="secondary">FT</Badge>
-  return <Badge variant="outline">Today</Badge>
+  return <Badge variant="outline">Upcoming</Badge>
 }
 
 function MatchRow({ match }: { match: Match }) {
@@ -104,6 +104,40 @@ export function MatchList({ leagues }: { leagues: LeagueGroup[] }) {
   const ftCount = allMatches.filter((m) => m.status === "FT").length
   const upcomingCount = allMatches.filter((m) => m.status === "UPCOMING").length
 
+  const matchesByDate = new Map<string, LeagueGroup[]>()
+  for (const league of filteredLeagues) {
+    for (const match of league.matches) {
+      const dateKey = match.startTime
+        ? new Date(match.startTime).toISOString().slice(0, 10)
+        : "undated"
+      const dateLeagues = matchesByDate.get(dateKey) ?? []
+      let dateLeague = dateLeagues.find((item) => item.leagueId === league.leagueId)
+      if (!dateLeague) {
+        dateLeague = { ...league, matches: [] }
+        dateLeagues.push(dateLeague)
+        matchesByDate.set(dateKey, dateLeagues)
+      }
+      dateLeague.matches.push(match)
+    }
+  }
+  const todayKey = new Date().toISOString().slice(0, 10)
+  const dateGroups = [...matchesByDate.entries()].sort(([left], [right]) => {
+    if (left === "undated") return 1
+    if (right === "undated") return -1
+    const leftDelta = Math.round((Date.parse(`${left}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000)
+    const rightDelta = Math.round((Date.parse(`${right}T00:00:00Z`) - Date.parse(`${todayKey}T00:00:00Z`)) / 86_400_000)
+    const position = (delta: number) => delta === 0 ? 0 : delta > 0 ? delta : 100 + Math.abs(delta)
+    return position(leftDelta) - position(rightDelta)
+  })
+
+  function dateHeading(dateKey: string) {
+    if (dateKey === "undated") return "Date unavailable"
+    if (dateKey === todayKey) return "Today"
+    return new Intl.DateTimeFormat("en", {
+      weekday: "long", month: "long", day: "numeric", timeZone: "UTC",
+    }).format(new Date(`${dateKey}T12:00:00Z`))
+  }
+
   function FilterBtn({ value, label, count }: { value: Filter; label: string; count?: number }) {
     const active = filter === value
     return (
@@ -147,38 +181,45 @@ export function MatchList({ leagues }: { leagues: LeagueGroup[] }) {
               {filter === "live"
                 ? "No live matches right now."
                 : filter === "finished"
-                  ? "No finished matches today."
+                  ? "No finished matches in this date range."
                   : filter === "upcoming"
-                    ? "No upcoming matches today."
+                    ? "No upcoming matches in this date range."
                     : "No matches found."}
             </p>
           </div>
         ) : (
-          filteredLeagues.map((leagueGroup) => (
-            <section key={`${leagueGroup.league}:${leagueGroup.country}`}>
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <Link href={`/tournament/${leagueGroup.leagueId}`} className="hover:underline">
-                    <h2 className="text-sm font-semibold text-slate-900">{leagueGroup.league}</h2>
-                  </Link>
-                  <p className="text-xs text-muted-foreground">{leagueGroup.country}</p>
-                </div>
-              </div>
-              <Card>
-                <CardContent className="p-0">
-                  {leagueGroup.matches.map((match, index) => (
-                    <div key={match.id}>
-                      <div 
-                        onClick={() => router.push(`/match/${match.id}`)}
-                        className="block transition hover:bg-muted/50 cursor-pointer"
-                      >
-                        <MatchRow match={match} />
+          dateGroups.map(([dateKey, leaguesForDate]) => (
+            <section key={dateKey}>
+              <h2 className="mb-4 text-lg font-semibold">{dateHeading(dateKey)}</h2>
+              <div className="space-y-6">
+                {leaguesForDate.map((leagueGroup) => (
+                  <section key={`${dateKey}:${leagueGroup.league}:${leagueGroup.country}`}>
+                    <div className="mb-3 flex items-center justify-between">
+                      <div>
+                        <Link href={`/tournament/${leagueGroup.leagueId}`} className="hover:underline">
+                          <h3 className="text-sm font-semibold text-slate-900">{leagueGroup.league}</h3>
+                        </Link>
+                        <p className="text-xs text-muted-foreground">{leagueGroup.country}</p>
                       </div>
-                      {index < leagueGroup.matches.length - 1 ? <Separator /> : null}
                     </div>
-                  ))}
-                </CardContent>
-              </Card>
+                    <Card>
+                      <CardContent className="p-0">
+                        {leagueGroup.matches.map((match, index) => (
+                          <div key={match.id}>
+                            <div
+                              onClick={() => router.push(`/match/${match.id}`)}
+                              className="block transition hover:bg-muted/50 cursor-pointer"
+                            >
+                              <MatchRow match={match} />
+                            </div>
+                            {index < leagueGroup.matches.length - 1 ? <Separator /> : null}
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  </section>
+                ))}
+              </div>
             </section>
           ))
         )}

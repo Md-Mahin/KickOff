@@ -10,7 +10,7 @@ import {
   pullMatchDetailsFromDatabase,
   getCachedMatchEndpoint,
 } from "../services/matchPipelineService";
-import { optionalAuth, requireAuth } from "../middleware/auth";
+import { requireAuth } from "../middleware/auth";
 
 const router = Router();
 
@@ -52,16 +52,11 @@ router.get("/favourites", requireAuth, async (req: Request, res: Response) => {
 });
 
 // GET /api/matches
-router.get("/", optionalAuth, async (req: Request, res: Response) => {
+router.get("/", async (req: Request, res: Response) => {
   try {
     if (req.query.basic === "true") {
       const basicData = await getBasicMatchList();
       return res.json(basicData);
-    }
-
-    if (req.auth?.role === "fan") {
-      const data = await getFavouriteFixtures(req.auth.userId);
-      return res.json(data);
     }
 
     const data = await getFixtures();

@@ -13,6 +13,7 @@ import tournamentRoutes from "./routes/tournamentRoutes";
 import notificationRoutes from "./routes/notificationRoutes";
 import adminRoutes from "./routes/adminRoutes";
 import { initializeDatabase, pool } from "./db";
+import { startMatchDetailScheduler } from "./services/matchDetailScheduler";
 
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
@@ -66,6 +67,7 @@ initializeDatabase()
   .finally(() => {
     app.listen(PORT, () => {
       console.log(`KickOff backend running on http://localhost:${PORT}`);
+      startMatchDetailScheduler();
     });
   });
 

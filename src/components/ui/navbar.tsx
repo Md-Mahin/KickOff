@@ -9,6 +9,7 @@ import { useEffect, useState } from "react"
 import GlobalSearch from "./global-search"
 import NotificationsMenu from "./notifications-menu"
 import ThemeToggle from "./theme-toggle"
+import { BACKEND_URL } from "@/lib/backend-url"
 
 export default function Navbar() {
   const router = useRouter()
@@ -18,7 +19,7 @@ export default function Navbar() {
 
   useEffect(() => {
     setMounted(true)
-    fetch("http://localhost:5000/api/auth/me", { credentials: "include" })
+    fetch(`${BACKEND_URL}/api/auth/me`, { credentials: "include" })
       .then(async (response) => {
         if (response.ok) {
           const data = await response.json()
@@ -37,7 +38,7 @@ export default function Navbar() {
 
   async function logout() {
     try {
-      await fetch("http://localhost:5000/api/auth/logout", {
+      await fetch(`${BACKEND_URL}/api/auth/logout`, {
         method: "POST",
         credentials: "include",
       })

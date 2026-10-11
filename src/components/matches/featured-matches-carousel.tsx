@@ -23,7 +23,7 @@ function MatchStatus({ match }: { match: Match }) {
   }
   return (
     <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-      Today
+      Upcoming
     </Badge>
   )
 }

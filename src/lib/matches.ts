@@ -8,8 +8,8 @@ export type Match = {
   awayTeamId?: number
   homeLogo?: string
   awayLogo?: string
-  homeScore: number
-  awayScore: number
+  homeScore: number | null
+  awayScore: number | null
   status: MatchStatus
   minute?: string
   startTime?: string
@@ -32,13 +32,84 @@ export type LeagueGroup = {
 export type MatchWithLeague = Match & {
   league: string
   country: string
+  competitionEdition?: string | null
+  matchday?: number | null
+  matchStage?: string | null
+  roundStatus?: "league" | "knockout"
+  roundPosition?: string | null
+  halftimeScore?: { home: number | null; away: number | null } | null
+  events?: MatchEvent[]
+  lineups?: MatchLineup[]
+  playerStatistics?: MatchPlayerStatistic[]
+  standings?: MatchStanding[]
+  headToHead?: HeadToHeadMatch[]
+  teamStatistics?: MatchTeamStatistics | null
+  detailAvailability?: {
+    source: string
+    permission: string | null
+    venue: boolean
+    referee: boolean
+    events: boolean
+    lineups: boolean
+    coaches: boolean
+    substitutes: boolean
+    playerStats: boolean
+    playerRatings: boolean
+    providers?: Record<string, string | null>
+  }
 }
+
+export type MatchPlayerStatistic = {
+  playerId: number
+  playerName: string
+  teamId: number | null
+  teamName: string | null
+  minutes: number
+  goals: number
+  assists: number
+  shots: number
+  shotsOnTarget: number
+  passes: number
+  keyPasses: number
+  tackles: number
+  interceptions: number
+  clearances: number
+  saves: number
+  yellowCards: number
+  redCards: number
+  rating: number | null
+}
+
+export type MatchStanding = {
+  teamId: number
+  teamName: string
+  rank: number | null
+  wins: number
+  draws: number
+  losses: number
+  goalsFor: number
+  goalsAgainst: number
+  points: number | null
+}
+
+export type HeadToHeadMatch = {
+  id: number
+  date: string
+  homeTeam: string
+  awayTeam: string
+  homeScore: number | null
+  awayScore: number | null
+}
+
+export type MatchTeamStatistics = null
 export type MatchEvent = {
   eventid: number
   eventtime: number | null
+  eventextratime?: number | null
+  eventdetail?: string | null
   playerid?: number | null
   substitutionplayerid?: number | null
-  eventtype: "Goal" | "Card" | "Foul" | "Substitution"
+  eventtype: "Goal" | "Card" | "Foul" | "Substitution" | "VAR"
   playername: string | null
   teamname: string
   goaltype: string | null
@@ -54,6 +125,7 @@ export type MatchLineupPlayer = {
   position: string | null
   grid: string | null
   rating: string | null
+  minutes?: number | null
   goals: number
   assists: number
   yellowCards: number

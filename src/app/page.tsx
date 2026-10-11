@@ -4,6 +4,7 @@ import { RoleDashboard } from "@/components/dashboard/role-dashboard"
 import { cookies } from "next/headers"
 import { MatchList } from "@/components/matches/match-list"
 import { FeaturedMatchesCarousel } from "@/components/matches/featured-matches-carousel"
+import { BACKEND_URL } from "@/lib/backend-url"
 
 export const dynamic = "force-dynamic"
 
@@ -15,7 +16,7 @@ export default async function HomePage() {
   // Check auth server-side
   let isSignedIn = false
   try {
-    const meRes = await fetch("http://localhost:5000/api/auth/me", {
+    const meRes = await fetch(`${BACKEND_URL}/api/auth/me`, {
       cache: "no-store",
       headers: cookieStr ? { cookie: cookieStr } : undefined,
     })
@@ -33,9 +34,9 @@ export default async function HomePage() {
       <main className="mx-auto max-w-5xl px-4 py-8">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end mb-8">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Today</h1>
+            <h1 className="text-2xl font-semibold tracking-tight">Matches</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Live scores, fixtures and match stats.
+              Live scores, recent results and upcoming fixtures by date.
             </p>
           </div>
         </div>
@@ -50,9 +51,9 @@ export default async function HomePage() {
               <div className="rounded-full bg-muted p-3 mb-4">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-muted-foreground"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></svg>
               </div>
-              <h3 className="text-lg font-semibold">No matches today</h3>
+              <h3 className="text-lg font-semibold">No matches available</h3>
               <p className="text-sm text-muted-foreground max-w-sm mt-1">
-                We couldn&apos;t find any fixtures. Make sure your backend is running.
+                Matches will appear here after the backend syncs the fixtures into the database.
               </p>
             </CardContent>
           </Card>

@@ -65,6 +65,21 @@ export async function initializeDatabase() {
       ADD COLUMN IF NOT EXISTS CoachPhoto TEXT;
 
     ALTER TABLE Match ADD COLUMN IF NOT EXISTS ApiFixtureID BIGINT;
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS ApiStatus VARCHAR(10);
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS ApiElapsed INT;
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS round_status VARCHAR(20) NOT NULL DEFAULT 'league';
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS round_position VARCHAR(10);
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS HalfTimeHomeGoals INT;
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS HalfTimeAwayGoals INT;
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS Matchday INT;
+    ALTER TABLE Match ADD COLUMN IF NOT EXISTS MatchStage VARCHAR(100);
+    ALTER TABLE Event ADD COLUMN IF NOT EXISTS EventExtraTime INT;
+    ALTER TABLE Event ADD COLUMN IF NOT EXISTS EventDetail VARCHAR(255);
+    SELECT setval(
+      pg_get_serial_sequence('team', 'teamid'),
+      COALESCE((SELECT MAX(teamid) FROM team), 0) + 1,
+      false
+    );
     CREATE UNIQUE INDEX IF NOT EXISTS uq_match_api_fixture_id
       ON Match(ApiFixtureID) WHERE ApiFixtureID IS NOT NULL;
 
@@ -83,12 +98,14 @@ export async function initializeDatabase() {
     );
 
     CREATE TABLE IF NOT EXISTS MatchApiCache (
-      MatchID INTEGER NOT NULL,
+      MatchID BIGINT NOT NULL,
       Endpoint VARCHAR(20) NOT NULL,
       Payload JSONB NOT NULL DEFAULT '[]'::jsonb,
       FetchedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
       PRIMARY KEY (MatchID, Endpoint)
     );
+    ALTER TABLE MatchApiCache
+      ALTER COLUMN MatchID TYPE BIGINT USING MatchID::bigint;
 
     CREATE INDEX IF NOT EXISTS idx_user_sessions_user ON UserSessions(UserID);
     CREATE INDEX IF NOT EXISTS idx_user_sessions_active
@@ -96,7 +113,7 @@ export async function initializeDatabase() {
 
     ALTER TABLE Event DROP CONSTRAINT IF EXISTS event_eventtype_check;
     ALTER TABLE Event ADD CONSTRAINT event_eventtype_check
-      CHECK (EventType IN ('Goal', 'Card', 'Foul', 'Substitution'));
+      CHECK (EventType IN ('Goal', 'Card', 'Foul', 'Substitution', 'VAR'));
 
     CREATE TABLE IF NOT EXISTS Substitution (
       EventID INT PRIMARY KEY REFERENCES Event(EventID) ON DELETE CASCADE,

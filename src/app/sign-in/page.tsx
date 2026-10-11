@@ -2,10 +2,11 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 
 import { AuthShell } from "@/components/auth/auth-shell"
 import { Button } from "@/components/ui/button"
+import { BACKEND_URL } from "@/lib/backend-url"
 
 const inputClassName =
   "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/20"
@@ -13,8 +14,12 @@ const inputClassName =
 export default function SignInPage() {
   const router = useRouter() 
   const [error, setError] = useState("")
-  const [registered] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("registered") === "1")
+  const [registered, setRegistered] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+
+  useEffect(() => {
+    setRegistered(new URLSearchParams(window.location.search).get("registered") === "1")
+  }, [])
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -24,7 +29,7 @@ export default function SignInPage() {
     const formData = new FormData(event.currentTarget)
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/login", {
+      const response = await fetch(`${BACKEND_URL}/api/auth/login`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -40,7 +45,11 @@ export default function SignInPage() {
         return
       }
 
-      window.location.href = "/"
+      const requestedRedirect = new URLSearchParams(window.location.search).get("redirect")
+      const safeRedirect = requestedRedirect?.startsWith("/") && !requestedRedirect.startsWith("//")
+        ? requestedRedirect
+        : "/"
+      window.location.assign(safeRedirect)
     } catch {
       setError("The sign-in service is unavailable. Please try again shortly.")
     } finally {

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import Link from "next/link"
+import { BACKEND_URL } from "@/lib/backend-url"
 import { AdminPerformanceDashboard } from "@/components/dashboard/admin-performance-dashboard"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -17,7 +18,7 @@ export default function AdminPage() {
 
   const checkAuth = async () => {
     try {
-      const res = await fetch("http://localhost:5000/api/auth/me", { credentials: "include" })
+      const res = await fetch(`${BACKEND_URL}/api/auth/me`, { credentials: "include" })
       if (!res.ok) {
         setUser(null)
         return
@@ -25,7 +26,7 @@ export default function AdminPage() {
       const data = await res.json()
       setUser(data.user ?? null)
       if (data.user?.role === "admin") {
-        fetch("http://localhost:5000/api/users/admin/users", { credentials: "include" })
+        fetch(`${BACKEND_URL}/api/users/admin/users`, { credentials: "include" })
           .then((r) => r.json())
           .then((uData) => setAdminUsers(uData.users ?? []))
           .catch(() => {})

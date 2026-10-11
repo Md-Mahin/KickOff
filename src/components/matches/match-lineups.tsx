@@ -39,7 +39,7 @@ function getPlayerRole(pos: string | null | undefined): "G" | "D" | "M" | "F" {
  */
 export function parseFormationLines(formationStr?: string | null): number[] {
   if (!formationStr || typeof formationStr !== "string") {
-    return [4, 3, 3]
+    return []
   }
 
   const parsed = formationStr
@@ -52,7 +52,7 @@ export function parseFormationLines(formationStr?: string | null): number[] {
   if (parsed.length >= 2 && sum >= 8 && sum <= 10) {
     return parsed
   }
-  return [4, 3, 3]
+  return []
 }
 
 export type FormattedPosition = {
@@ -120,7 +120,14 @@ export function layoutFormation(
   })
 
   // 4. Parse formation lines (e.g. "4-2-3-1" -> [4, 2, 3, 1])
-  const outfieldCounts = parseFormationLines(formationStr)
+  const parsedFormation = parseFormationLines(formationStr)
+  const hasPositionData = teamStarters.some((player) => Boolean(player.position?.trim()))
+  const outfieldCounts = parsedFormation.length > 0
+    ? parsedFormation
+    : hasPositionData
+      ? [1, 2, 3].map((role) => outfieldPlayers.filter((player) => rolePriority(player.position) === role).length).filter((count) => count > 0)
+      : []
+  if (outfieldCounts.length === 0) return []
 
   // 5. Partition starters into tactical lines:
   // Line 0: [GK]
@@ -242,7 +249,7 @@ function PlayerMarker({
       </div>
 
       {/* Performance Badges: Rating, Goals, Cards */}
-      {(player.rating || player.goals > 0 || player.yellowCards > 0 || player.redCards > 0) && (
+      {(player.rating || player.goals > 0 || player.assists > 0 || player.yellowCards > 0 || player.redCards > 0 || player.minutes != null) && (
         <div className="mt-0.5 flex items-center justify-center gap-0.5 text-[9px] font-bold text-white">
           {player.rating && (
             <span
@@ -254,6 +261,8 @@ function PlayerMarker({
             </span>
           )}
           {player.goals > 0 && <span>⚽ {player.goals > 1 ? player.goals : ""}</span>}
+          {player.assists > 0 && <span title="Assists">A {player.assists}</span>}
+          {player.minutes != null && <span title="Minutes played">{player.minutes}'</span>}
           {player.yellowCards > 0 && (
             <span className="rounded-sm bg-yellow-300 px-1 text-[8px] text-slate-900 shadow-sm">
               🟨
@@ -367,6 +376,7 @@ function Bench({
                   </p>
                   <p className="text-[10px] text-muted-foreground">
                     {player.position ?? "Substitute"}
+                    {player.minutes != null ? ` · ${player.minutes}'` : ""}
                     {player.rating ? ` ⭐ ${Number(player.rating).toFixed(1)}` : ""}
                   </p>
                 </div>
@@ -483,8 +493,15 @@ function Bench({
   )
 }
 
-export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; events: MatchEvent[] }) {
-  if (lineups.length === 0) {
+export function MatchLineups({ lineups, events, status }: { lineups: MatchLineup[]; events: MatchEvent[]; status?: string }) {
+  const hasAnyLineupData = lineups.some((lineup) =>
+    (lineup.starters?.length ?? 0) > 0 ||
+    (lineup.substitutes?.length ?? 0) > 0 ||
+    Boolean(lineup.coach?.name) ||
+    (lineup.unavailable?.length ?? 0) > 0
+  )
+
+  if (!hasAnyLineupData) {
     return (
       <Card className="mt-6 border-slate-200">
         <CardContent className="flex flex-col items-center justify-center p-8 text-center sm:p-10">
@@ -503,9 +520,13 @@ export function MatchLineups({ lineups, events }: { lineups: MatchLineup[]; even
               />
             </svg>
           </div>
-          <h3 className="text-base font-semibold text-slate-900">Lineups Not Announced</h3>
+          <h3 className="text-base font-semibold text-slate-900">
+            {status === "FT" ? "Lineup Data Unavailable" : "Lineups Not Announced"}
+          </h3>
           <p className="mt-1 max-w-md text-xs text-muted-foreground">
-            Lineups are announced approximately 1 hour before kickoff. Check back closer to match time.
+            {status === "FT"
+              ? "The available match data provider did not supply the starting XI, bench, or coaching staff for this match."
+              : "Lineups are usually announced approximately 1 hour before kickoff. Check back closer to match time."}
           </p>
         </CardContent>
       </Card>

@@ -11,14 +11,15 @@ import type {
   PositionBreakdownResponse,
   RatingDistributionResponse,
 } from "@/lib/matches"
+import { BACKEND_URL } from "@/lib/backend-url"
 
-const API_URL =
-  process.env.BACKEND_URL ?? "http://localhost:5000"
+const API_URL = BACKEND_URL
 
 type ApiFixture = {
   fixture: {
     id: number
     date?: string | null
+    round?: { matchday?: number | null; stage?: string | null } | null
     venue?: {
       name: string | null
       city: string | null
@@ -34,6 +35,7 @@ type ApiFixture = {
     id: number
     name: string
     country: string | null
+    edition?: string | null
   }
 
   teams: {
@@ -52,9 +54,19 @@ type ApiFixture = {
   goals: {
     home: number | null
     away: number | null
+    halftime?: { home: number | null; away: number | null } | null
   }
 
   referees?: string[]
+  events?: MatchEvent[]
+  lineups?: MatchLineup[]
+  _detailAvailability?: MatchWithLeague["detailAvailability"]
+  round_status?: "league" | "knockout"
+  round_position?: string | null
+  playerStatistics?: MatchWithLeague["playerStatistics"]
+  standings?: MatchWithLeague["standings"]
+  headToHead?: MatchWithLeague["headToHead"]
+  teamStatistics?: MatchWithLeague["teamStatistics"]
 }
 
 function getStatus(status: string): MatchStatus {
@@ -69,12 +81,14 @@ function getStatus(status: string): MatchStatus {
       "SUSP",
       "INT",
       "LIVE",
+      "IN_PLAY",
+      "PAUSED",
     ].includes(status)
   ) {
     return "LIVE"
   }
 
-  if (["FT", "AET", "PEN"].includes(status)) {
+  if (["FT", "AET", "PEN", "FINISHED", "AWARDED"].includes(status)) {
     return "FT"
   }
 
@@ -87,7 +101,7 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
   return {
     id: fixture.fixture.id,
     startTime: fixture.fixture.date ?? undefined,
-    referees: fixture.referees,
+    referees: fixture.referees ?? (fixture as any).fixture?.referees,
     venue: (fixture.fixture?.venue?.name
       ? {
         name: fixture.fixture.venue.name,
@@ -111,8 +125,8 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
     homeLogo: fixture.teams.home.logo ?? undefined,
     awayLogo: fixture.teams.away.logo ?? undefined,
 
-    homeScore: fixture.goals.home ?? 0,
-    awayScore: fixture.goals.away ?? 0,
+    homeScore: fixture.goals.home,
+    awayScore: fixture.goals.away,
 
     status,
 
@@ -125,8 +139,19 @@ function toMatch(fixture: ApiFixture): MatchWithLeague {
     league: fixture.league.name,
     leagueId: fixture.league.id,
     country: fixture.league.country ?? "International",
-    events: (fixture as any).events ?? [],
-    lineups: (fixture as any).lineups ?? [],
+    competitionEdition: fixture.league.edition ?? null,
+    matchday: fixture.fixture.round?.matchday ?? null,
+    matchStage: fixture.fixture.round?.stage ?? null,
+    roundStatus: fixture.round_status,
+    roundPosition: fixture.round_position ?? null,
+    halftimeScore: fixture.goals.halftime ?? null,
+    events: fixture.events ?? [],
+    lineups: fixture.lineups ?? [],
+    playerStatistics: fixture.playerStatistics ?? [],
+    standings: fixture.standings ?? [],
+    headToHead: fixture.headToHead ?? [],
+    teamStatistics: fixture.teamStatistics ?? null,
+    detailAvailability: fixture._detailAvailability,
     _pipelineMetadata: (fixture as any)._pipelineMetadata ?? null,
   } as MatchWithLeague & { events?: MatchEvent[]; lineups?: MatchLineup[]; _pipelineMetadata?: any }
 }
@@ -230,7 +255,7 @@ export async function getMatchById(
   id: number
 ): Promise<MatchWithLeague | null> {
   const response = await fetch(
-    `${API_URL}/api/matches/${id}`,
+    `${API_URL}/api/matches/${id}/details`,
     {
       cache: "no-store",
     }

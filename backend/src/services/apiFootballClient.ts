@@ -5,6 +5,8 @@ const DAILY_LIMIT = 95; // Keep five calls in reserve for manual/operational use
 const inFlight = new Map<string, Promise<any[]>>();
 const responseCache = new Map<string, { value: any[]; expiresAt: number }>();
 let circuitOpenUntil = 0;
+let accountSuspended = false;
+let providerStateCheckedAt = 0;
 let setup: Promise<void> | null = null;
 
 async function ensureUsageTable() {
@@ -14,8 +16,58 @@ async function ensureUsageTable() {
       RequestCount INTEGER NOT NULL DEFAULT 0,
       UpdatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
-  `).then(() => undefined).catch((error) => { setup = null; throw error; });
+  `).then(() => pool.query(`
+    CREATE TABLE IF NOT EXISTS MatchApiCache (
+      MatchID BIGINT NOT NULL,
+      Endpoint VARCHAR(20) NOT NULL,
+      Payload JSONB NOT NULL DEFAULT '[]'::jsonb,
+      FetchedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (MatchID, Endpoint)
+    )
+  `)).then(() => undefined).catch((error) => { setup = null; throw error; });
   await setup;
+}
+
+async function refreshProviderState() {
+  if (Date.now() - providerStateCheckedAt < 10_000) return;
+  await ensureUsageTable();
+  const result = await pool.query(
+    `SELECT Payload FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = 'api-football-state'`
+  );
+  const state = result.rows[0]?.payload ?? {};
+  accountSuspended ||= state.suspended === true;
+  if (state.retryAt) circuitOpenUntil = Math.max(circuitOpenUntil, new Date(state.retryAt).getTime());
+  providerStateCheckedAt = Date.now();
+}
+
+async function persistProviderState(state: { suspended?: boolean; retryAt?: number }) {
+  const payload = {
+    suspended: state.suspended ?? accountSuspended,
+    retryAt: state.retryAt ? new Date(state.retryAt).toISOString() : null,
+  };
+  await pool.query(`INSERT INTO MatchApiCache (MatchID, Endpoint, Payload, FetchedAt)
+    VALUES (0, 'api-football-state', $1::jsonb, CURRENT_TIMESTAMP)
+    ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`,
+    [JSON.stringify(payload)]);
+}
+
+function retryAfterMs(response: Response, fallbackMs: number) {
+  const value = response.headers.get("retry-after");
+  if (!value) return fallbackMs;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : fallbackMs;
+}
+
+async function openCircuitFor(durationMs: number, suspended = false) {
+  accountSuspended ||= suspended;
+  circuitOpenUntil = accountSuspended ? Number.POSITIVE_INFINITY : Date.now() + durationMs;
+  try {
+    await persistProviderState({ suspended: accountSuspended, retryAt: accountSuspended ? undefined : circuitOpenUntil });
+  } catch (error) {
+    console.warn(`[API] Could not persist provider cooldown: ${(error as Error).message}`);
+  }
 }
 
 async function reserveRequest(): Promise<boolean> {
@@ -41,7 +93,8 @@ async function reserveRequest(): Promise<boolean> {
 
 export async function callApiFootball(path: string): Promise<any[]> {
   const url = `${API_BASE}${path}`;
-  const ttl = path.startsWith("/fixtures?date=") ? 3 * 60 * 60_000 : 0;
+  const ttl = path.startsWith("/fixtures?from=") ? 20 * 60_000
+    : path.startsWith("/fixtures?date=") ? 3 * 60 * 60_000 : 0;
   const cached = ttl ? responseCache.get(url) : undefined;
   if (cached && cached.expiresAt > Date.now()) {
     console.log("[CACHE] Reusing recent fixture list");
@@ -53,6 +106,8 @@ export async function callApiFootball(path: string): Promise<any[]> {
     return existing;
   }
   const request = (async () => {
+    await refreshProviderState();
+    if (accountSuspended) throw new Error("API-Football account is suspended; provider access requires account reinstatement");
     if (Date.now() < circuitOpenUntil) throw new Error("API-Football cooldown is active");
     const key = process.env.API_FOOTBALL_KEY;
     if (!key || key === "your-api-football-key") throw new Error("API key not configured");
@@ -64,16 +119,28 @@ export async function callApiFootball(path: string): Promise<any[]> {
       console.log(`[API] Fetching ${path}`);
       const response = await fetch(url, { headers: { "x-apisports-key": key }, signal: controller.signal });
       if (!response.ok) {
-        if (response.status === 429 || response.status >= 500) circuitOpenUntil = Date.now() + (response.status === 429 ? 60 * 60_000 : 60_000);
-        throw new Error(`API-Football returned ${response.status}`);
+        const detail = await response.text();
+        if (detail.toLowerCase().includes("suspended")) {
+          await openCircuitFor(0, true);
+          throw new Error("API-Football account is suspended; provider access requires account reinstatement");
+        }
+        if (response.status === 429) await openCircuitFor(retryAfterMs(response, 60 * 60_000));
+        else if (response.status >= 500) await openCircuitFor(60_000);
+        throw new Error(`API-Football returned ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`);
+      }
+      const body = await response.json() as { response?: any[]; errors?: Record<string, unknown> | unknown[] };
+      const errors = body.errors;
+      if (errors && (Array.isArray(errors) ? errors.length > 0 : Object.keys(errors).length > 0)) {
+        const isSuspended = JSON.stringify(errors).toLowerCase().includes("suspended");
+        if (isSuspended) await openCircuitFor(0, true);
+        throw new Error(`API-Football rejected the request: ${JSON.stringify(errors)}`);
       }
       circuitOpenUntil = 0;
-      const body = await response.json() as { response?: any[] };
       const result = Array.isArray(body.response) ? body.response : [];
       if (ttl) responseCache.set(url, { value: result, expiresAt: Date.now() + ttl });
       return result;
     } catch (error) {
-      if (!circuitOpenUntil) circuitOpenUntil = Date.now() + 60_000;
+      if (!circuitOpenUntil && !accountSuspended) await openCircuitFor(60_000);
       throw error;
     } finally {
       clearTimeout(timeout);

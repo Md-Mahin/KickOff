@@ -6,8 +6,8 @@ import { useEffect, useState } from "react"
 import { AuthShell } from "@/components/auth/auth-shell"
 import { Button } from "@/components/ui/button"
 import type { TeamEntry, PlayerEntry } from "@/lib/api"
+import { BACKEND_URL } from "@/lib/backend-url"
 
-const BACKEND = "http://localhost:5000"
 const inputCls =
   "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/20"
 
@@ -130,7 +130,7 @@ export default function SignUpPage() {
   useEffect(() => {
     if (step !== 2 || teams.national.length + teams.club.length > 0) return
     setTeamsLoading(true)
-    fetch(`${BACKEND}/api/users/teams/catalog`)
+    fetch(`${BACKEND_URL}/api/users/teams/catalog`)
       .then(r => r.json())
       .then((d: { national: TeamEntry[]; club: TeamEntry[] }) => setTeams(d))
       .catch(() => {})
@@ -141,7 +141,7 @@ export default function SignUpPage() {
   useEffect(() => {
     if (step !== 3 || players.length > 0) return
     setPlayersLoading(true)
-    fetch(`${BACKEND}/api/users/players/catalog`)
+    fetch(`${BACKEND_URL}/api/users/players/catalog`)
       .then(r => r.json())
       .then((d: { players: PlayerEntry[] }) => setPlayers(d.players ?? []))
       .catch(() => {})
@@ -190,7 +190,7 @@ export default function SignUpPage() {
       const teamIds = [...selectedNational, ...selectedClub].map(t => t.id)
       const playerIds = selectedPlayers.map(p => p.id)
 
-      const response = await fetch(`${BACKEND}/api/auth/${endpoint}`, {
+      const response = await fetch(`${BACKEND_URL}/api/auth/${endpoint}`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

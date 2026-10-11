@@ -99,6 +99,10 @@ CREATE TABLE Match (
     MatchDate      TIMESTAMP,
     HomeGoals      INT DEFAULT 0,
     AwayGoals      INT DEFAULT 0,
+    HalfTimeHomeGoals INT,
+    HalfTimeAwayGoals INT,
+    Matchday       INT,
+    MatchStage     VARCHAR(100),
     round_status   VARCHAR(20) DEFAULT 'league' NOT NULL CHECK (round_status IN ('league', 'knockout')),
     round_position VARCHAR(10),
     CHECK (HomeTeamID <> AwayTeamID),
@@ -177,7 +181,9 @@ CREATE TABLE Event (
     PlayerID      INT REFERENCES Player(PlayerID),
     TeamID        INT REFERENCES Team(TeamID),
     EventTime     INT,
-    EventType     VARCHAR(20) NOT NULL CHECK (EventType IN ('Goal','Card','Foul','Substitution'))
+    EventExtraTime INT,
+    EventDetail   VARCHAR(255),
+    EventType     VARCHAR(20) NOT NULL CHECK (EventType IN ('Goal','Card','Foul','Substitution','VAR'))
 );
 
 -- repeat api call theke safe thakar jonno 
@@ -189,7 +195,7 @@ CREATE TABLE ApiFootballDailyUsage (
 );
 
 CREATE TABLE MatchApiCache (
-    MatchID INTEGER NOT NULL,
+    MatchID BIGINT NOT NULL,
     Endpoint VARCHAR(20) NOT NULL,
     Payload JSONB NOT NULL DEFAULT '[]'::jsonb,
     FetchedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

@@ -10,9 +10,11 @@
     "seed:users": "tsx scripts/seed100Users.ts",
     "seed:admins": "tsx scripts/seedAdminUsers.ts",
     "test:ratings": "tsx scripts/testRatingAlgorithm.ts",
+    "test:match-details": "tsx scripts/testMatchDetails.ts",
     "sync-api": "tsx scripts/syncApiFootball.ts",
     "sync:football-data": "tsx scripts/syncFootballData.ts",
     "sync:secondary": "tsx scripts/syncSecondaryFootballProviders.ts",
+    "sync:match-details": "tsx scripts/syncMatchDetails.ts",
     "sync-events": "tsx scripts/syncEvents.ts"
   },
   "keywords": [],
