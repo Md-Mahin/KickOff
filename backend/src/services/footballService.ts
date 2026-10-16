@@ -190,34 +190,43 @@ export async function upsertApiTeam(team: any, countryId: number | null): Promis
 
 export async function upsertApiPlayer(player: any): Promise<number | null> {
   if (!player?.name) return null;
-  // The fixtures/lineups endpoint often omits player.photo. API-Sports serves
-  // player portraits directly by provider ID, so we can persist the URL without
-  // spending another API request on each player's profile.
-  const photo = player.photo ?? (player.id && !["football-data", "sportsdb"].includes(player.source)
-    ? `https://media.api-sports.io/football/players/${Number(player.id)}.png`
-    : null);
+  // Only a photo explicitly supplied by a provider is real display data. Avoid
+  // constructing API-Sports URLs that may not exist for this provider player.
+  const photo = player.photo ?? null;
+  const apiPlayerId = player.id && !["football-data", "sportsdb"].includes(player.source)
+    && Number.isSafeInteger(Number(player.id)) && Number(player.id) > 0 ? Number(player.id) : null;
+  const apiTeamId = Number.isSafeInteger(Number(player.apiTeamId)) && Number(player.apiTeamId) > 0
+    ? Number(player.apiTeamId) : null;
+  const apiLeagueId = Number.isSafeInteger(Number(player.apiLeagueId)) && Number(player.apiLeagueId) > 0
+    ? Number(player.apiLeagueId) : null;
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query("SELECT pg_advisory_xact_lock(0, hashtext(LOWER($1)))", [String(player.name)]);
-    const existing = await client.query(
-      `SELECT PlayerID FROM Player
-       WHERE ($1::text IS NOT NULL AND Photo = $1) OR LOWER(Name) = LOWER($2)
-       ORDER BY CASE WHEN $1::text IS NOT NULL AND Photo = $1 THEN 0 ELSE 1 END, PlayerID LIMIT 1`,
-      [photo, String(player.name)]
-    );
+    const playerLockKey = apiPlayerId == null ? `name:${String(player.name).toLowerCase()}` : `api-player:${apiPlayerId}`;
+    await client.query("SELECT pg_advisory_xact_lock(0, hashtext($1))", [playerLockKey]);
+    const existing = apiPlayerId != null
+      ? await client.query(`SELECT PlayerID FROM Player WHERE ApiPlayerID = $1 LIMIT 1`, [apiPlayerId])
+      : await client.query(
+        `SELECT PlayerID FROM Player
+         WHERE ($1::text IS NOT NULL AND Photo = $1) OR LOWER(Name) = LOWER($2)
+         ORDER BY CASE WHEN $1::text IS NOT NULL AND Photo = $1 THEN 0 ELSE 1 END, PlayerID LIMIT 1`,
+        [photo, String(player.name)]
+      );
     if (existing.rows.length) {
       const id = Number(existing.rows[0].playerid);
       await client.query(
-        `UPDATE Player SET Position = COALESCE($2, Position), Photo = COALESCE($3, Photo) WHERE PlayerID = $1`,
-        [id, player.pos ?? null, photo]
+        `UPDATE Player SET Position = COALESCE(Position, $2), Photo = COALESCE(Photo, $3),
+          ApiPlayerID = COALESCE(ApiPlayerID, $4), ApiPlayerTeamID = COALESCE(ApiPlayerTeamID, $5),
+          ApiPlayerLeagueID = COALESCE(ApiPlayerLeagueID, $6) WHERE PlayerID = $1`,
+        [id, player.pos ?? null, photo, apiPlayerId, apiTeamId, apiLeagueId]
       );
       await client.query("COMMIT");
       return id;
     }
     const inserted = await client.query(
-      `INSERT INTO Player (Name, Position, Photo) VALUES ($1, $2, $3) RETURNING PlayerID`,
-      [String(player.name), player.pos ?? null, photo]
+      `INSERT INTO Player (Name, Position, Photo, ApiPlayerID, ApiPlayerTeamID, ApiPlayerLeagueID)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING PlayerID`,
+      [String(player.name), player.pos ?? null, photo, apiPlayerId, apiTeamId, apiLeagueId]
     );
     await client.query("COMMIT");
     return Number(inserted.rows[0].playerid);

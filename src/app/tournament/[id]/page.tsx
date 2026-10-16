@@ -4,6 +4,7 @@ import { ChevronDown } from "lucide-react"
 import FollowButton, { FollowersCountBadge } from "@/components/ui/follow-button"
 import { getTournamentProfile } from "@/lib/api"
 import TournamentInteractiveContent from "@/components/tournament/tournament-interactive-content"
+import { SafeImage } from "@/components/ui/safe-image"
 
 export default async function TournamentProfilePage({
   params,
@@ -30,14 +31,7 @@ export default async function TournamentProfilePage({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex items-center gap-6">
               <div className="relative h-24 w-24 overflow-hidden rounded-lg border border-border bg-white shadow-sm flex items-center justify-center p-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={
-                    tournament.logo ?? ""
-                  }
-                  alt={tournament.name}
-                  className="max-h-full max-w-full object-contain"
-                />
+                <SafeImage src={tournament.logo} alt={tournament.name} width={96} height={96} fallbackKind="tournament" className="h-full w-full object-contain" />
               </div>
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-slate-900 dark:text-slate-100 flex items-center gap-3">

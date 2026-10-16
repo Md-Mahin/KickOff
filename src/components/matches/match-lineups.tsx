@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card"
 import type { MatchEvent, MatchLineup, MatchLineupPlayer } from "@/lib/matches"
-import Image from "next/image"
+import { SafeImage } from "@/components/ui/safe-image"
 import Link from "next/link"
 
 type SubstitutionInfo = { direction: "in" | "out"; minute: number | null }
@@ -214,13 +214,7 @@ function PlayerMarker({
       {/* Player Circular Avatar / Photo */}
       <div className="relative mx-auto h-9 w-9 sm:h-10 sm:w-10 rounded-full border-2 border-white bg-slate-100 shadow-md group-hover:scale-110 transition-transform overflow-hidden">
         {player.photo ? (
-          <Image
-            src={player.photo}
-            alt={player.name}
-            fill
-            sizes="40px"
-            className="object-cover"
-          />
+          <SafeImage src={player.photo} alt={player.name} fill sizes="40px" fallbackKind="person" className="object-cover" />
         ) : (
           <span className="flex h-full items-center justify-center text-[10px] font-bold text-slate-700">
             {player.number ? player.number : player.name.slice(0, 2).toUpperCase()}
@@ -319,12 +313,7 @@ function Bench({
       >
         {lineup.coach?.photo ? (
           <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-full border border-slate-300 bg-white shadow-xs">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={lineup.coach.photo}
-              alt={lineup.coach.name ?? "Coach"}
-              className="h-full w-full object-cover"
-            />
+            <SafeImage src={lineup.coach.photo} alt={lineup.coach.name ?? "Coach"} fill sizes="44px" fallbackKind="person" className="object-cover" />
           </div>
         ) : (
           <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-bold text-slate-700 shadow-xs">
@@ -357,7 +346,7 @@ function Bench({
               >
                 <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted border border-slate-200">
                   {player.photo ? (
-                    <Image src={player.photo} alt={player.name} fill sizes="32px" className="object-cover" />
+                    <SafeImage src={player.photo} alt={player.name} fill sizes="32px" fallbackKind="person" className="object-cover" />
                   ) : (
                     <span className="flex h-full items-center justify-center text-[10px] font-bold">
                       {player.number ? player.number : player.name.slice(0, 2).toUpperCase()}
@@ -421,7 +410,7 @@ function Bench({
               >
                 <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted border border-red-200 grayscale">
                   {player.photo ? (
-                    <Image src={player.photo} alt={player.name} fill sizes="32px" className="object-cover" />
+                    <SafeImage src={player.photo} alt={player.name} fill sizes="32px" fallbackKind="person" className="object-cover" />
                   ) : (
                     <span className="flex h-full items-center justify-center text-[10px] font-bold">
                       {player.name.slice(0, 2).toUpperCase()}
@@ -460,7 +449,7 @@ function Bench({
               >
                 <div className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full bg-red-100 border border-red-300">
                   {player.photo ? (
-                    <Image src={player.photo} alt={player.name} fill sizes="32px" className="object-cover grayscale" />
+                    <SafeImage src={player.photo} alt={player.name} fill sizes="32px" fallbackKind="person" className="object-cover grayscale" />
                   ) : (
                     <span className="flex h-full items-center justify-center text-[10px] font-bold text-red-700">
                       {player.number ? player.number : player.name.slice(0, 2).toUpperCase()}
@@ -587,9 +576,9 @@ export function MatchLineups({ lineups, events, status }: { lineups: MatchLineup
                 className={`flex items-center gap-2.5 ${index === 1 ? "justify-end text-right" : ""}`}
               >
                 {index === 0 && lineup.team.logo && (
-                  <Image
+                  <SafeImage
                     src={lineup.team.logo}
-                    alt=""
+                    alt={`${lineup.team.name} crest`}
                     width={28}
                     height={28}
                     className="h-7 w-7 object-contain shrink-0"
@@ -624,9 +613,9 @@ export function MatchLineups({ lineups, events, status }: { lineups: MatchLineup
                   </span>
                 </div>
                 {index === 1 && lineup.team.logo && (
-                  <Image
+                  <SafeImage
                     src={lineup.team.logo}
-                    alt=""
+                    alt={`${lineup.team.name} crest`}
                     width={28}
                     height={28}
                     className="h-7 w-7 object-contain shrink-0"

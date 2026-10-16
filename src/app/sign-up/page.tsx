@@ -7,6 +7,7 @@ import { AuthShell } from "@/components/auth/auth-shell"
 import { Button } from "@/components/ui/button"
 import type { TeamEntry, PlayerEntry } from "@/lib/api"
 import { BACKEND_URL } from "@/lib/backend-url"
+import { SafeImage } from "@/components/ui/safe-image"
 
 const inputCls =
   "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/20"
@@ -53,8 +54,7 @@ function TeamChip({
         }`}
     >
       {team.logo ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={team.logo} alt="" className="h-4 w-4 object-contain" />
+        <SafeImage src={team.logo} alt="" width={16} height={16} className="h-4 w-4 object-contain" />
       ) : (
         <span className="flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
           {team.name.substring(0, 2).toUpperCase()}

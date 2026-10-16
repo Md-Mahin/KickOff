@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import { Search, Star, Users } from "lucide-react"
+import { SafeImage } from "@/components/ui/safe-image"
 
 const FILTERS = ["All", "Team", "Player", "Match", "Competition", "News", "Manager", "Referee", "Venue"]
 
@@ -14,7 +15,7 @@ type SearchResult = {
   country: string;
   flag: string;
   sport: string;
-  avatar: string;
+  avatar: string | null;
   type: string;
 }
 
@@ -162,9 +163,8 @@ export default function GlobalSearch() {
                   }}
                 >
                   {/* Avatar */}
-                  <div className="h-10 w-10 shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.avatar} alt={item.name} className="h-full w-full object-cover" />
+                  <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-full bg-gray-100 dark:bg-gray-800">
+                    <SafeImage src={item.avatar} alt={item.name} fill sizes="40px" fallbackKind={item.type === "Player" || item.type === "Manager" ? "person" : item.type === "Competition" ? "tournament" : "team"} className="object-contain p-1" />
                   </div>
 
                   {/* Data Stack */}

@@ -43,7 +43,21 @@ CREATE TABLE Player (
     NationalityCountryID INT REFERENCES Country(CountryID),
     Position      VARCHAR(10),
     Photo         TEXT,
+    HeightCm      SMALLINT,
+    PreferredFoot VARCHAR(10),
+    ApiPlayerID   BIGINT,
+    ApiPlayerTeamID BIGINT,
+    ApiPlayerLeagueID BIGINT,
     OverallRating NUMERIC(4, 2) DEFAULT 6.00 CHECK (OverallRating >= 0.0 AND OverallRating <= 10.0)
+);
+
+CREATE TABLE PlayerFieldProvenance (
+    PlayerID          INT NOT NULL REFERENCES Player(PlayerID) ON DELETE CASCADE,
+    FieldName         VARCHAR(40) NOT NULL,
+    Source            VARCHAR(40) NOT NULL,
+    ProviderPlayerID  BIGINT,
+    RetrievedAt       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (PlayerID, FieldName)
 );
 
 CREATE TABLE TeamPlayerHistory (
@@ -66,7 +80,8 @@ CREATE TABLE Tournament (
     TournamentID  SERIAL PRIMARY KEY,
     Name          VARCHAR(150) NOT NULL,
     Type          VARCHAR(50),
-    Edition       VARCHAR(50)
+    Edition       VARCHAR(50),
+    Country       VARCHAR(100)
 );
 
 CREATE TABLE TournamentParticipation (
@@ -92,6 +107,8 @@ CREATE TABLE Standing (
 CREATE TABLE Match (
     MatchID        SERIAL PRIMARY KEY,
     ApiFixtureID   BIGINT,
+    ApiStatus      VARCHAR(10),
+    ApiElapsed     INT,
     TournamentID   INT NOT NULL REFERENCES Tournament(TournamentID),
     HomeTeamID     INT NOT NULL REFERENCES Team(TeamID),
     AwayTeamID     INT NOT NULL REFERENCES Team(TeamID),
@@ -130,6 +147,7 @@ CREATE TABLE Lineup (
     Formation     VARCHAR(20),
     Position      VARCHAR(10),
     JerseyNumber  INT,
+    LineupOrder   INT,
     PRIMARY KEY (MatchID, TeamID, PlayerID)
 );
 
@@ -140,6 +158,15 @@ CREATE TABLE TeamMatchCoach (
     CoachName     VARCHAR(255),
     CoachPhoto    TEXT,
     PRIMARY KEY (MatchID, TeamID)
+);
+
+CREATE TABLE MatchUnavailablePlayer (
+    MatchID       INT NOT NULL REFERENCES Match(MatchID) ON DELETE CASCADE,
+    TeamID        INT NOT NULL REFERENCES Team(TeamID) ON DELETE CASCADE,
+    PlayerID      INT NOT NULL REFERENCES Player(PlayerID) ON DELETE CASCADE,
+    Reason        VARCHAR(255),
+    Status        VARCHAR(50),
+    PRIMARY KEY (MatchID, TeamID, PlayerID)
 );
 
 CREATE TABLE PlayerMatchStat (
@@ -367,6 +394,7 @@ CREATE INDEX idx_follows_team_team    ON UserFollowsTeam(TeamID);
 CREATE INDEX idx_follows_player_pl    ON UserFollowsPlayer(PlayerID);
 CREATE INDEX idx_player_rating        ON Player(OverallRating DESC NULLS LAST);
 CREATE INDEX idx_player_position      ON Player(Position);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_player_api_id ON Player(ApiPlayerID) WHERE ApiPlayerID IS NOT NULL;
 CREATE INDEX idx_lineup_match_team    ON Lineup(MatchID, TeamID);
 CREATE INDEX idx_lineup_player_match  ON Lineup(PlayerID, MatchID DESC);
 CREATE INDEX idx_match_date_desc      ON Match(MatchDate DESC);
@@ -393,15 +421,11 @@ CREATE TRIGGER trg_lineup_team_check
 BEFORE INSERT OR UPDATE ON Lineup
 FOR EACH ROW EXECUTE FUNCTION check_lineup_team_in_match();
 
-<<<<<<< HEAD
 -- ============================================================================
 -- TRIGGER: trg_match_club_country_check
 -- Strictly enforces that club teams only play clubs and national teams only
 -- play national teams. A match between national team and club team is not possible 
 -- ============================================================================
-=======
-
->>>>>>> 71f7fbc6b631673b050cacf04693a6eb7d0af166
 CREATE OR REPLACE FUNCTION fn_check_match_team_types()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -1014,11 +1038,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-<<<<<<< HEAD
 -- Function 2: win ratio dekhe ekta team er 
-=======
--- win ratio for a team
->>>>>>> 71f7fbc6b631673b050cacf04693a6eb7d0af166
 CREATE OR REPLACE FUNCTION fn_get_team_win_ratio(p_team_id INT, p_tournament_id INT DEFAULT NULL)
 RETURNS NUMERIC(5, 2) AS $$
 DECLARE
@@ -1046,11 +1066,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-<<<<<<< HEAD
 -- Function 3: player er formm dekhe lsat N match porjonto form 
-=======
---player form formula disi
->>>>>>> 71f7fbc6b631673b050cacf04693a6eb7d0af166
 CREATE OR REPLACE FUNCTION fn_get_player_form(p_player_id INT, p_last_n INT DEFAULT 5)
 RETURNS NUMERIC(4, 2) AS $$
 DECLARE
@@ -1070,16 +1086,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-<<<<<<< HEAD
 -- ============================================================================
 -- Procedure: player transfer hocche kina 
 -- ============================================================================
-=======
-
--- tranfer process korar jonno
-
-
->>>>>>> 71f7fbc6b631673b050cacf04693a6eb7d0af166
 CREATE OR REPLACE PROCEDURE sp_process_player_transfer(
     p_player_id INT,
     p_new_team_id INT,

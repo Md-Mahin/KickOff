@@ -157,6 +157,11 @@ function retryAfterMs(response: Response, fallbackMs: number) {
   return Number.isFinite(timestamp) ? Math.max(0, timestamp - Date.now()) : fallbackMs;
 }
 
+function isExplicitAccountSuspension(value: unknown) {
+  const text = String(value ?? "").replace(/\s+/g, " ").toLowerCase();
+  return /\b(account|subscription|api key)\b.{0,60}\bsuspend(?:ed|sion)?\b|\bsuspend(?:ed|sion)?\b.{0,60}\b(account|subscription|api key)\b/.test(text);
+}
+
 async function readProviderState(client: import("pg").PoolClient | typeof pool = pool): Promise<ProviderState> {
   const result = await client.query("SELECT Payload FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = 'api-football-state'");
   return result.rows[0]?.payload ?? {};
@@ -226,6 +231,14 @@ async function reserveProviderRequest(client: import("pg").PoolClient, path: str
   try {
     await client.query("SELECT pg_advisory_xact_lock($1)", [REQUEST_LOCK_ID]);
     const state = await readProviderState(client);
+    const active = await client.query(`SELECT RequestID FROM ApiFootballRequestLedger
+      WHERE Endpoint = $1 AND KeyFingerprint = $2 AND IsProviderRequest = TRUE
+        AND CacheStatus = 'reserved' AND RequestedAt >= CURRENT_TIMESTAMP - INTERVAL '30 seconds'
+      ORDER BY RequestID DESC LIMIT 1`, [path, fingerprint]);
+    if (active.rows.length) {
+      await client.query("COMMIT");
+      return { requestId: null, remainingBefore: Number(state.requestsRemaining), fingerprint, sharedRequest: true };
+    }
     if (state.suspended || state.paused) throw new Error(`API-Football is paused: ${state.pauseReason ?? "verify the account and reconcile quota manually"}`);
     if (state.keyFingerprint && state.keyFingerprint !== fingerprint) throw new Error("API-Football key changed; manual account and quota verification is required");
     if (state.retryAt && new Date(state.retryAt).getTime() > Date.now()) throw new Error(`API-Football cooldown active until ${state.retryAt}`);
@@ -261,7 +274,7 @@ async function reserveProviderRequest(client: import("pg").PoolClient, path: str
       [path, fixtureIdFromPath(path), purpose, remaining - 1, fingerprint]);
     await persistProviderState({ ...state, requestsRemaining: remaining - 1, keyFingerprint: fingerprint }, client);
     await client.query("COMMIT");
-    return { requestId: Number(reservation.rows[0].requestid), remainingBefore: remaining, fingerprint };
+    return { requestId: Number(reservation.rows[0].requestid), remainingBefore: remaining, fingerprint, sharedRequest: false };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -283,13 +296,14 @@ async function completeProviderRequest(client: import("pg").PoolClient, requestI
   const headers = response ? readQuotaHeaders(response.headers)
     : { remaining: null, limit: null, rateLimitRemaining: null, rateLimitLimit: null };
   const state = await readProviderState(client);
-  const statusText = `${String(error ?? "")} ${JSON.stringify(error ?? "")}`.toLowerCase();
-  const remaining = headers.remaining ?? Math.max(0, reservation.remainingBefore - 1);
-  const authenticationFailure = response?.status === 401 || response?.status === 403;
-  const suspensionFailure = statusText.includes("suspend");
+  const locallyReserved = Number(state.requestsRemaining);
+  const remaining = headers.remaining == null
+    ? Number.isFinite(locallyReserved) ? locallyReserved : Math.max(0, reservation.remainingBefore - 1)
+    : Number.isFinite(locallyReserved) ? Math.min(headers.remaining, locallyReserved) : headers.remaining;
+  const suspensionFailure = isExplicitAccountSuspension(error);
   const nonRetryableClientFailure = Boolean(response && response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429);
   const observedAt = headers.remaining == null ? state.quotaObservedAt : new Date().toISOString();
-  if (authenticationFailure || suspensionFailure) {
+  if (suspensionFailure) {
     await persistProviderState({ ...state, suspended: true, paused: true,
       pauseReason: `HTTP ${response?.status ?? "unknown"}: ${providerErrorSummary(error)}; manual account verification required`,
       suspendedAt: new Date().toISOString(), retryAt: null,
@@ -313,7 +327,9 @@ async function completeProviderRequest(client: import("pg").PoolClient, requestI
       lastResponseStatus: response?.status ?? null, lastResponseError: providerErrorSummary(error) }, client);
   } else if (response?.status === 429 || (response && response.status >= 500) || error) {
     const failures = Number(state.failures ?? 0) + 1;
-    const delay = response?.status === 429 ? retryAfterMs(response, jitteredBackoff(failures)) : jitteredBackoff(failures);
+    const delay = response?.status === 429
+      ? Math.max(60_000, retryAfterMs(response, jitteredBackoff(failures)))
+      : jitteredBackoff(failures);
     await persistProviderState({ ...state, failures, paused: false, retryAt: new Date(Date.now() + delay).toISOString(),
       requestsRemaining: remaining,
       requestsLimit: headers.limit ?? state.requestsLimit,
@@ -361,57 +377,100 @@ export async function callApiFootball(path: string, options: ApiFootballOptions 
   const request = (async () => {
     const key = process.env.API_FOOTBALL_KEY;
     if (!key || key === "your-api-football-key") throw new Error("API key not configured");
-    const client = await pool.connect();
-    let locked = false;
     let reservation: Awaited<ReturnType<typeof reserveProviderRequest>> | null = null;
     let response: Response | null = null;
+    let earlyResult: any[] | null = null;
+    let alreadyCompleted = false;
+    const reservationClient = await pool.connect();
+    let locked = false;
     try {
-      await client.query("SELECT pg_advisory_lock($1)", [REQUEST_LOCK_ID]);
+      // Hold the connection/lock only while checking cache and reserving quota.
+      await reservationClient.query("SELECT pg_advisory_lock($1)", [REQUEST_LOCK_ID]);
       locked = true;
-      const secondCacheCheck = await getCachedResponse(path, client);
+      const secondCacheCheck = await getCachedResponse(path, reservationClient);
       if (secondCacheCheck) {
-        const state = await readProviderState(client);
-        await recordCacheHit(path, purpose, state.requestsRemaining == null ? null : Number(state.requestsRemaining), client);
-        return secondCacheCheck.result;
-      }
-      reservation = await reserveProviderRequest(client, path, purpose);
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
-      try {
-        response = await fetch(`${API_BASE}${path}`, {
-          headers: { "x-apisports-key": key }, signal: controller.signal, cache: "no-store",
-        });
-        const rawBody = await response.text();
-        let body: ApiFootballObject | null;
-        try {
-          const parsed: unknown = JSON.parse(rawBody);
-          body = isApiFootballObject(parsed) ? parsed : null;
-        } catch { body = null; }
-        const errors = body?.errors;
-        const hasErrors = Array.isArray(errors) ? errors.length > 0
-          : isApiFootballObject(errors) && Object.keys(errors).length > 0;
-        if (!response.ok || hasErrors) {
-          const summary = providerErrorSummary(JSON.stringify(errors ?? rawBody));
-          const providerError = new Error(`API-Football ${response.status}: ${summary}`);
-          await completeProviderRequest(client, reservation.requestId, path, response, null, reservation, providerError);
-          throw providerError;
-        }
-        if (!body || !Array.isArray(body.response)) throw new Error("API-Football returned a malformed response envelope");
-        const result = body.response.filter(isApiFootballObject) as any[];
-        await completeProviderRequest(client, reservation.requestId, path, response, result, reservation);
-        return result;
-      } catch (error) {
-        if (reservation) {
-          const statusIsRecorded = response && !response.ok;
-          if (!statusIsRecorded) await completeProviderRequest(client, reservation.requestId, path, response, null, reservation, error);
-        }
-        throw error;
-      } finally {
-        clearTimeout(timeout);
+        const state = await readProviderState(reservationClient);
+        await recordCacheHit(path, purpose, state.requestsRemaining == null ? null : Number(state.requestsRemaining), reservationClient);
+        earlyResult = secondCacheCheck.result;
+      } else {
+        reservation = await reserveProviderRequest(reservationClient, path, purpose);
       }
     } finally {
-      if (locked) await client.query("SELECT pg_advisory_unlock($1)", [REQUEST_LOCK_ID]);
-      client.release();
+      if (locked) await reservationClient.query("SELECT pg_advisory_unlock($1)", [REQUEST_LOCK_ID]);
+      reservationClient.release();
+    }
+
+    if (earlyResult) return earlyResult;
+    if (!reservation) throw new Error("API-Football request was neither cached nor reserved");
+
+    const persistCompletion = async (result: unknown, error?: unknown) => {
+      if (!reservation || reservation.requestId == null) return;
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT pg_advisory_xact_lock($1)", [REQUEST_LOCK_ID]);
+        await completeProviderRequest(client, reservation.requestId, path, response, result, reservation, error);
+        await client.query("COMMIT");
+        alreadyCompleted = true;
+      } catch (completionError) {
+        await client.query("ROLLBACK");
+        throw completionError;
+      } finally {
+        client.release();
+      }
+    };
+
+    if (reservation.sharedRequest) {
+      const deadline = Date.now() + 15_000;
+      while (Date.now() < deadline) {
+        const shared = await getCachedResponse(path);
+        if (shared) {
+          const state = await readProviderState();
+          await recordCacheHit(path, purpose, state.requestsRemaining == null ? null : Number(state.requestsRemaining));
+          return shared.result;
+        }
+        const pending = await pool.query(`SELECT 1 FROM ApiFootballRequestLedger
+          WHERE Endpoint = $1 AND KeyFingerprint = $2 AND IsProviderRequest = TRUE
+            AND CacheStatus = 'reserved' AND RequestedAt >= CURRENT_TIMESTAMP - INTERVAL '30 seconds'
+          LIMIT 1`, [path, reservation.fingerprint]);
+        if (!pending.rows.length) break;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      }
+      const shared = await getCachedResponse(path);
+      if (shared) return shared.result;
+      throw new Error("A matching API-Football request is already in progress or failed; no duplicate request was sent");
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10_000);
+    try {
+      response = await fetch(`${API_BASE}${path}`, {
+        headers: { "x-apisports-key": key }, signal: controller.signal, cache: "no-store",
+      });
+      const rawBody = await response.text();
+      let body: ApiFootballObject | null;
+      try {
+        const parsed: unknown = JSON.parse(rawBody);
+        body = isApiFootballObject(parsed) ? parsed : null;
+      } catch { body = null; }
+      const errors = body?.errors;
+      const hasErrors = Array.isArray(errors) ? errors.length > 0
+        : isApiFootballObject(errors) && Object.keys(errors).length > 0;
+      if (!response.ok || hasErrors) {
+        const summary = providerErrorSummary(JSON.stringify(errors ?? rawBody));
+        const providerError = new Error(`API-Football ${response.status}: ${summary}`);
+        await persistCompletion(null, providerError);
+        throw providerError;
+      }
+      if (!body || !Array.isArray(body.response)) throw new Error("API-Football returned a malformed response envelope");
+      const result = body.response.filter(isApiFootballObject) as any[];
+      await persistCompletion(result);
+      return result;
+    } catch (error) {
+      if (!alreadyCompleted) await persistCompletion(null, error);
+      throw error;
+    } finally {
+      clearTimeout(timeout);
     }
   })();
   inFlight.set(path, request);

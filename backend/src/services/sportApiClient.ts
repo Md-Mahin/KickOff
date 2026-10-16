@@ -158,8 +158,9 @@ export async function callSofaScoreRapidApi(path: string, options: {
 	const existing = inFlight.get(flightKey);
 	if (existing) return existing;
 	const request = (async () => {
-		const client = await pool.connect();
+		let client = await pool.connect();
 		let locked = false;
+		let clientReleased = false;
 		let quota = await readRapidApiQuota(client);
 		const fingerprint = rapidApiKeyFingerprint(key);
 		let auditEndpoint: string | null = null;
@@ -232,21 +233,37 @@ export async function callSofaScoreRapidApi(path: string, options: {
 			quota = { ...quota, keyFingerprint: fingerprint, auditSequence, monthlyUsed: used + 1, monthlyBandwidthBytes: bandwidthUsed,
 				remaining: remaining - 1, lastAttemptAt: attemptAt, lastRequest: pendingAudit };
 			await writeRapidApiQuota(quota, client);
+			await client.query("SELECT pg_advisory_unlock($1)", [RAPIDAPI_LOCK_ID]);
+			locked = false;
+			client.release();
+			clientReleased = true;
 			let response: Response;
+			let responseText: string;
 			try {
 				response = await fetch(`${RAPIDAPI_BASE}${path}`, {
 					headers: { "x-rapidapi-host": host, "x-rapidapi-key": key },
 					cache: "no-store", signal: AbortSignal.timeout(10_000),
 				});
+				responseText = await response.text();
 			} catch {
+				client = await pool.connect();
+				clientReleased = false;
+				await client.query("SELECT pg_advisory_lock($1)", [RAPIDAPI_LOCK_ID]);
+				locked = true;
+				quota = await readRapidApiQuota(client);
 				const failedAudit = { ...pendingAudit, responseExcerpt: "Network error or timeout; response status unavailable" };
 				await writeRapidApiAudit(auditSequence, failedAudit, client);
-				await writeRapidApiQuota({ ...quota, paused: true, pauseReason: "Request outcome is uncertain; verify dashboard quota before resuming", lastRequest: failedAudit }, client);
+				await writeRapidApiQuota({ ...quota, monthlyUsed: Math.max(Number(quota.monthlyUsed ?? 0), used + 1),
+					paused: true, pauseReason: "Request outcome is uncertain; verify dashboard quota before resuming", lastRequest: failedAudit }, client);
 				throw new Error("SofaScore RapidAPI request failed; quota state preserved for reconciliation");
 			}
+			client = await pool.connect();
+			clientReleased = false;
+			await client.query("SELECT pg_advisory_lock($1)", [RAPIDAPI_LOCK_ID]);
+			locked = true;
+			quota = await readRapidApiQuota(client);
 			const quotaHeaders = readSofaScoreRapidApiQuotaHeaders(response.headers);
 			const headers = rapidApiResponseHeaders(response.headers);
-			const responseText = await response.text();
 			const responseBytes = Buffer.byteLength(responseText, "utf8");
 			let body: any = null;
 			try { body = responseText ? JSON.parse(responseText) : null; } catch { body = responseText || null; }
@@ -257,9 +274,12 @@ export async function callSofaScoreRapidApi(path: string, options: {
 				: new Date(now.getTime() + quotaHeaders.resetSeconds * 1000).toISOString();
 			const audit = { endpoint: path, status: response.status, requestedAt: attemptAt, headers, responseBytes, responseExcerpt };
 			await writeRapidApiAudit(auditSequence, audit, client);
-			const monthlyUsed = observedQuota == null ? used + 1 : Math.max(used + 1, RAPIDAPI_MONTHLY_HARD_LIMIT - observedQuota);
-			const monthlyBandwidthBytes = bandwidthUsed + responseBytes;
-			const remainingAfter = observedQuota ?? remaining - 1;
+			const latestMonthlyUsed = Number(quota.monthlyUsed ?? used + 1);
+			const latestRemaining = Number(quota.remaining ?? remaining - 1);
+			const monthlyUsed = observedQuota == null ? Math.max(used + 1, latestMonthlyUsed)
+				: Math.max(latestMonthlyUsed, RAPIDAPI_MONTHLY_HARD_LIMIT - observedQuota);
+			const monthlyBandwidthBytes = Number(quota.monthlyBandwidthBytes ?? bandwidthUsed) + responseBytes;
+			const remainingAfter = observedQuota == null ? latestRemaining : Math.min(observedQuota, latestRemaining);
 			const diagnosticData = diagnostic ? { endpoint: path, status: response.status, requestedAt: attemptAt, responseBytes, responseExcerpt } : quota.lastDiagnostic;
 			if (response.status === 401 || response.status === 403 || response.status === 429) {
 				const reason = response.status === 429 || observedQuota === 0
@@ -330,7 +350,7 @@ export async function callSofaScoreRapidApi(path: string, options: {
 			return body;
 		} finally {
 			if (locked) await client.query("SELECT pg_advisory_unlock($1)", [RAPIDAPI_LOCK_ID]);
-			client.release();
+			if (!clientReleased) client.release();
 		}
 	})();
 	inFlight.set(flightKey, request);

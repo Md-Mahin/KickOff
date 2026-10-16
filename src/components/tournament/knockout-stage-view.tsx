@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Trophy, ChevronRight, Calendar, ArrowRight, ShieldAlert } from "lucide-react"
 import type { TeamMatch } from "@/lib/matches"
 import { Button } from "@/components/ui/button"
+import { SafeImage } from "@/components/ui/safe-image"
 
 export type KnockoutStageCode = "ALL" | "GF" | "SF" | "QF" | "RO16" | "RO32"
 
@@ -275,13 +276,6 @@ export default function KnockoutStageView({ matches, tournamentName }: KnockoutS
 }
 
 function KnockoutMatchItem({ match, meta }: { match: TeamMatch; meta?: StageMeta }) {
-  const homeLogo =
-    match.homeTeam.logo ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(match.homeTeam.name)}&background=eee&color=333&size=32`
-  const awayLogo =
-    match.awayTeam.logo ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(match.awayTeam.name)}&background=eee&color=333&size=32`
-
   const isFT = match.status === "FT"
   const isLive = match.status === "LIVE"
   const homeWon = isFT && match.homeGoals > match.awayGoals
@@ -315,12 +309,7 @@ function KnockoutMatchItem({ match, meta }: { match: TeamMatch; meta?: StageMeta
         <div className="flex-1 max-w-lg">
           <div className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-muted/50">
             <div className="flex items-center gap-2.5 min-w-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={homeLogo}
-                alt={match.homeTeam.name}
-                className="h-6 w-6 rounded-full object-cover shrink-0"
-              />
+              <SafeImage src={match.homeTeam.logo} alt={match.homeTeam.name} width={24} height={24} className="h-6 w-6 rounded-full object-contain shrink-0" />
               <span
                 className={`truncate text-sm ${
                   homeWon
@@ -347,12 +336,7 @@ function KnockoutMatchItem({ match, meta }: { match: TeamMatch; meta?: StageMeta
 
           <div className="flex items-center justify-between py-1 px-2 rounded-md hover:bg-muted/50">
             <div className="flex items-center gap-2.5 min-w-0">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={awayLogo}
-                alt={match.awayTeam.name}
-                className="h-6 w-6 rounded-full object-cover shrink-0"
-              />
+              <SafeImage src={match.awayTeam.logo} alt={match.awayTeam.name} width={24} height={24} className="h-6 w-6 rounded-full object-contain shrink-0" />
               <span
                 className={`truncate text-sm ${
                   awayWon

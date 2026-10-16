@@ -6,6 +6,7 @@ import { ChevronDown, Trophy, Shield, Calendar, BarChart3, Info } from "lucide-r
 import type { TeamMatch, TournamentStandingRow, TournamentInfo } from "@/lib/matches"
 import { Button } from "@/components/ui/button"
 import KnockoutStageView from "./knockout-stage-view"
+import { SafeImage } from "@/components/ui/safe-image"
 
 function formatDate(dateString: string) {
   const date = new Date(dateString)
@@ -41,13 +42,6 @@ function ResultBadge({ result }: { result: "W" | "L" | "D" | null }) {
 }
 
 function FeaturedMatchCard({ match }: { match: TeamMatch }) {
-  const homeLogo =
-    match.homeTeam.logo ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(match.homeTeam.name)}&background=eee&color=333&size=48`
-  const awayLogo =
-    match.awayTeam.logo ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(match.awayTeam.name)}&background=eee&color=333&size=48`
-
   return (
     <div className="rounded-xl border border-border bg-card p-4 shadow-sm mb-6">
       <div className="flex items-center justify-between mb-4">
@@ -67,12 +61,7 @@ function FeaturedMatchCard({ match }: { match: TeamMatch }) {
       </div>
       <div className="flex items-center justify-center gap-6">
         <div className="flex flex-col items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={homeLogo}
-            alt={match.homeTeam.name}
-            className="h-16 w-16 object-cover rounded-full"
-          />
+          <SafeImage src={match.homeTeam.logo} alt={match.homeTeam.name} width={64} height={64} className="h-16 w-16 object-contain rounded-full" />
           <Link
             href={`/team/${match.homeTeam.id}`}
             className="text-sm font-semibold hover:underline text-center"
@@ -82,12 +71,7 @@ function FeaturedMatchCard({ match }: { match: TeamMatch }) {
         </div>
         <div className="text-2xl font-black text-muted-foreground">VS</div>
         <div className="flex flex-col items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={awayLogo}
-            alt={match.awayTeam.name}
-            className="h-16 w-16 object-cover rounded-full"
-          />
+          <SafeImage src={match.awayTeam.logo} alt={match.awayTeam.name} width={64} height={64} className="h-16 w-16 object-contain rounded-full" />
           <Link
             href={`/team/${match.awayTeam.id}`}
             className="text-sm font-semibold hover:underline text-center"
@@ -473,17 +457,7 @@ export default function TournamentInteractiveContent({
                             href={`/team/${row.teamId}`}
                             className="flex items-center gap-3 hover:underline"
                           >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={
-                                row.teamLogo ??
-                                `https://ui-avatars.com/api/?name=${encodeURIComponent(
-                                  row.teamName
-                                )}&background=eee&color=333&size=24`
-                              }
-                              alt={row.teamName}
-                              className="h-6 w-6 object-cover rounded-full"
-                            />
+                            <SafeImage src={row.teamLogo} alt={row.teamName} width={24} height={24} className="h-6 w-6 object-contain rounded-full" />
                             <span className="font-semibold text-slate-900 dark:text-slate-100 whitespace-nowrap">
                               {row.teamName}
                             </span>

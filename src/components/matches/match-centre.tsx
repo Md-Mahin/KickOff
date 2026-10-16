@@ -1,6 +1,6 @@
 "use client"
 
-import Image from "next/image"
+import { SafeImage } from "@/components/ui/safe-image"
 import Link from "next/link"
 import { useState } from "react"
 import {
@@ -44,7 +44,7 @@ function TeamCrest({ src, name, size = 72 }: { src?: string | null; name: string
   return (
     <div className="relative flex h-[72px] w-[72px] shrink-0 items-center justify-center sm:h-[88px] sm:w-[88px]">
       {src ? (
-        <Image src={src} alt={`${name} crest`} width={size} height={size} style={{ width: "auto", height: "auto" }} className="max-h-full max-w-full object-contain" />
+        <SafeImage src={src} alt={`${name} crest`} width={size} height={size} className="h-full w-full object-contain" />
       ) : (
         <div aria-label={`${name} crest unavailable`} className="flex h-14 w-14 items-center justify-center rounded-full border border-white/15 bg-white/10 text-lg font-bold text-white/80">
           {name.slice(0, 2).toUpperCase()}
@@ -159,7 +159,7 @@ function LineupPanel({ lineup }: { lineup: MatchLineup }) {
   return (
     <section className="min-w-0 rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-        {lineup.team.logo ? <Image src={lineup.team.logo} alt="" width={28} height={28} className="h-7 w-7 object-contain" /> : <Shield className="h-6 w-6 text-slate-400" />}
+        {lineup.team.logo ? <SafeImage src={lineup.team.logo} alt={`${lineup.team.name} crest`} width={28} height={28} className="h-7 w-7 object-contain" /> : <Shield className="h-6 w-6 text-slate-400" />}
         <h3 className="min-w-0 flex-1 truncate text-sm font-bold text-slate-900">{lineup.team.name}</h3>
         <span className="text-xs text-slate-500">{lineup.formation ?? ""}</span>
       </div>

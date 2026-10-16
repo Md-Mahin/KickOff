@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react"
 import Link from "next/link"
-import Image from "next/image"
+import { SafeImage } from "@/components/ui/safe-image"
 import {
   getPlayerRankings,
   getPositionBreakdown,
@@ -724,12 +724,7 @@ export function AdminPerformanceDashboard() {
                         <div className="flex items-center gap-2.5 min-w-[140px]">
                           {player.photo ? (
                             <div className="relative h-7 w-7 rounded-full overflow-hidden border border-slate-200 shrink-0">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={player.photo}
-                                alt={player.name}
-                                className="h-full w-full object-cover"
-                              />
+                              <SafeImage src={player.photo} alt={player.name} fill sizes="28px" fallbackKind="person" className="object-cover" />
                             </div>
                           ) : (
                             <div className="h-7 w-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-[10px] shrink-0">

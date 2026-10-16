@@ -15,6 +15,12 @@ const matchDetailInFlight = new Map<number, Promise<boolean>>();
 const fallbackRangeInFlight = new Map<string, Promise<void>>();
 const fallbackRangeCheckedAt = new Map<string, number>();
 
+function reportProviderFailure(label: string, error: unknown) {
+  const message = (error as Error).message;
+  if (/\bpaused\b|cooldown active|dashboard reconciliation is required/i.test(message)) return;
+  console.warn(`[Provider] ${label}: ${message}`);
+}
+
 const sameTeamName = (left: string, right: string) => canonicalTeamName(left) !== "" && canonicalTeamName(left) === canonicalTeamName(right);
 
 function enrichMappedProviderMatchOnce(fixtureId: number, status: string) {
@@ -783,7 +789,7 @@ async function hydrateMatch(matchId: number) {
         const updated = await enrichMappedProviderMatchOnce(dbData._apiFixtureId, dbData.fixture.status.short);
         if (updated) dbData = await pullMatchDetailsFromDatabase(matchId) ?? dbData;
       } catch (error) {
-        console.warn(`[match-provider] Detail enrichment unavailable for ${dbData._apiFixtureId}: ${(error as Error).message}`);
+        reportProviderFailure(`Match detail enrichment unavailable for ${dbData._apiFixtureId}`, error);
       }
     }
     console.log('[DB] Match data served from database');
@@ -812,7 +818,7 @@ async function loadAlternateProviderDetails(match: any) {
         missing = getMissingDetailCategories(workingMatch);
       }
     } catch (error) {
-      console.warn(`[Provider] SportAPI.ai could not fill match details: ${(error as Error).message}`);
+      reportProviderFailure("SportAPI.ai could not fill match details", error);
     }
   }
 
@@ -910,7 +916,7 @@ async function loadAlternateProviderDetails(match: any) {
         }
       }
     } catch (error) {
-      console.warn(`[Provider] API-Football could not fill match details: ${(error as Error).message}`);
+      reportProviderFailure("API-Football could not fill match details", error);
     }
   }
 
@@ -923,7 +929,7 @@ async function loadAlternateProviderDetails(match: any) {
     sync = import("./secondaryFootballProviders.js").then(({ syncSecondaryFootballProvidersRange }) =>
       syncSecondaryFootballProvidersRange(date, date).then(() => undefined),
     ).catch((error) => {
-      console.warn(`[Provider] Alternate match lookup failed for ${date}: ${(error as Error).message}`);
+      reportProviderFailure(`Alternate match lookup failed for ${date}`, error);
     }).finally(() => fallbackRangeInFlight.delete(date));
     fallbackRangeInFlight.set(date, sync);
   }
@@ -964,7 +970,7 @@ async function loadAlternateProviderDetails(match: any) {
     const primaryForSofa = secondary ? mergeAlternateMatchDetails(workingMatch, secondary) : workingMatch;
     return loadSofaScoreLastResort(primaryForSofa, withSecondary);
   } catch (error) {
-    console.warn(`[Provider] Alternate details unavailable for ${alternateId}: ${(error as Error).message}`);
+    reportProviderFailure(`Alternate details unavailable for ${alternateId}`, error);
     return loadSofaScoreLastResort(workingMatch, combined);
   }
 }
@@ -980,7 +986,7 @@ async function loadSofaScoreLastResort(match: any, combined: any) {
     if (!details) return combined;
     return combined ? mergeAlternateMatchDetails(combined, details) : details;
   } catch (error) {
-    console.warn(`[Provider] SportAPI RapidAPI could not fill match details: ${(error as Error).message}`);
+    reportProviderFailure("SportAPI RapidAPI could not fill match details", error);
     return combined;
   }
 }
@@ -1006,7 +1012,14 @@ async function syncApiFootballPlayerStats(fixtureId: number, databaseMatchId: nu
       const player = entry.player;
       const stat = entry.statistics?.[0];
       if (!player?.name || !stat) continue;
-      const playerId = await upsertApiPlayer({ id: player.id, name: player.name, photo: player.photo ?? null, pos: stat.games?.position ?? null });
+      const playerId = await upsertApiPlayer({
+        id: player.id,
+        name: player.name,
+        photo: player.photo ?? null,
+        pos: stat.games?.position ?? null,
+        apiTeamId: block.team?.id ?? stat.team?.id,
+        apiLeagueId: stat.league?.id,
+      });
       if (!playerId) continue;
       const number = (value: unknown, fallback = 0) => {
         const parsed = Number(value);
@@ -1051,7 +1064,7 @@ async function hydratePlayerStats(match: any) {
     await syncApiFootballPlayerStats(fixtureId, match._databaseMatchId, match.fixture.status.short);
     return await pullMatchDetailsFromDatabase(fixtureId) ?? match;
   } catch (error) {
-    console.warn(`[API] Player statistics unavailable: ${(error as Error).message}`);
+    reportProviderFailure("Player statistics unavailable", error);
     return match;
   }
 }
@@ -1150,7 +1163,7 @@ async function loadCachedMatchEndpoint(matchId: number, endpoint: 'events' | 'li
       : withStats;
     return { match, payload: fresh };
   } catch (error) {
-    console.warn(`[API] ${endpoint} unavailable; serving database data: ${(error as Error).message}`);
+    reportProviderFailure(`${endpoint} unavailable; serving database data`, error);
     return { match: dbData, payload: endpoint === 'events' ? dbData.events : dbData.lineups };
   }
 }
@@ -1215,7 +1228,7 @@ async function applyFieldLevelFallback(match: any): Promise<{ match: any; provid
     const merged = mergeAlternateMatchDetails(match, alternate);
     return { providerId: merged._fallbackProviderIds?.[0] ?? null, match: merged };
   } catch (error) {
-    console.warn(`[fallback] Alternate provider could not fill match details: ${(error as Error).message}`);
+    reportProviderFailure("Alternate provider could not fill match details", error);
     return { match, providerId: null };
   }
 }
@@ -1248,7 +1261,7 @@ export async function executeMatchDetailPipeline(matchId: number) {
       teamStatistics = await loadApiFootballTeamStatistics(match, apiFootballId) ?? teamStatistics;
     }
   } catch (error) {
-    console.warn(`[API] Team statistics unavailable: ${(error as Error).message}`);
+    reportProviderFailure("Team statistics unavailable", error);
   }
 
   const matchProviderId = Number(match._apiFixtureId ?? 0);

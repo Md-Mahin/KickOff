@@ -49,51 +49,64 @@ async function requestFootballData(url: string, token: string): Promise<Response
   const request = requestQueue.then(async () => {
     const client = await pool.connect();
     let locked = false;
+    let state: Record<string, any> = {};
+    let slotAt = Date.now();
+    let nextAllowedAt = 0;
     try {
       await client.query("SELECT pg_advisory_lock($1)", [RATE_LIMIT_LOCK_ID]);
       locked = true;
-      const stateResult = await client.query(
-        "SELECT Payload FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = $1",
-        [RATE_LIMIT_ENDPOINT],
-      );
-      const state = stateResult.rows[0]?.payload ?? {};
+      const stateResult = await client.query("SELECT Payload FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = $1", [RATE_LIMIT_ENDPOINT]);
+      state = stateResult.rows[0]?.payload ?? {};
       const cooldownUntil = state.cooldownUntil ? new Date(state.cooldownUntil).getTime() : 0;
       if (cooldownUntil > Date.now()) {
         throw new Error(`football-data.org cooldown active until ${new Date(cooldownUntil).toISOString()}`);
       }
       const persistedNext = state.nextAllowedAt ? new Date(state.nextAllowedAt).getTime() : 0;
-      const delay = Math.max(0, lastRequestAt + REQUEST_INTERVAL_MS - Date.now(), persistedNext - Date.now());
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-      const nextAllowedAt = Date.now() + REQUEST_INTERVAL_MS;
+      slotAt = Math.max(Date.now(), lastRequestAt + REQUEST_INTERVAL_MS, persistedNext);
+      nextAllowedAt = slotAt + REQUEST_INTERVAL_MS;
       await persistFootballDataState({ ...state, nextAllowedAt: new Date(nextAllowedAt).toISOString() }, client);
-      const response = await fetch(url, {
+    } finally {
+      if (locked) await client.query("SELECT pg_advisory_unlock($1)", [RATE_LIMIT_LOCK_ID]);
+      client.release();
+    }
+
+    const delay = Math.max(0, slotAt - Date.now());
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    let response: Response;
+    try {
+      response = await fetch(url, {
         headers: { "X-Auth-Token": token },
         cache: "no-store",
         signal: AbortSignal.timeout(10_000),
       });
+    } finally {
       lastRequestAt = Date.now();
-      if (response.status === 429 || response.status >= 500) {
-        const failures = Math.min(Number(state.failures ?? 0) + 1, 6);
+    }
+
+    if (response.status === 429 || response.status >= 500) {
+      const completionClient = await pool.connect();
+      let completionLocked = false;
+      try {
+        await completionClient.query("SELECT pg_advisory_lock($1)", [RATE_LIMIT_LOCK_ID]);
+        completionLocked = true;
+        const latestResult = await completionClient.query("SELECT Payload FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = $1", [RATE_LIMIT_ENDPOINT]);
+        const latest = latestResult.rows[0]?.payload ?? state;
+        const failures = Math.min(Number(latest.failures ?? 0) + 1, 6);
         const fallbackMs = Math.min(60_000 * 2 ** (failures - 1), 30 * 60_000);
         const retry = response.headers.get("retry-after");
         const retrySeconds = Number(retry);
         const retryDate = retry && !Number.isFinite(retrySeconds) ? Date.parse(retry) : NaN;
         const cooldownMs = Math.max(60_000, Number.isFinite(retrySeconds) ? retrySeconds * 1000
           : Number.isFinite(retryDate) ? retryDate - Date.now() : fallbackMs);
-        await persistFootballDataState({
-          ...state,
-          nextAllowedAt: new Date(nextAllowedAt).toISOString(),
-          cooldownUntil: new Date(Date.now() + cooldownMs).toISOString(),
-          failures,
-        }, client);
-      } else if (response.ok && (state.failures || state.cooldownUntil)) {
-        await persistFootballDataState({ nextAllowedAt: new Date(nextAllowedAt).toISOString() }, client);
+        await persistFootballDataState({ ...latest,
+          cooldownUntil: new Date(Date.now() + cooldownMs).toISOString(), failures,
+          lastStatus: response.status, lastStatusAt: new Date().toISOString() }, completionClient);
+      } finally {
+        if (completionLocked) await completionClient.query("SELECT pg_advisory_unlock($1)", [RATE_LIMIT_LOCK_ID]);
+        completionClient.release();
       }
-      return response;
-    } finally {
-      if (locked) await client.query("SELECT pg_advisory_unlock($1)", [RATE_LIMIT_LOCK_ID]);
-      client.release();
     }
+    return response;
   });
   requestQueue = request.then(() => undefined, () => undefined);
   requestInFlight.set(url, request);

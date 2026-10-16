@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import type { Match, LeagueGroup } from "@/lib/matches"
-import Image from "next/image"
+import { SafeImage } from "@/components/ui/safe-image"
 import { LocalMatchTime } from "@/components/matches/local-match-time"
 
 function MatchStatus({ match }: { match: Match }) {
@@ -30,7 +30,7 @@ function MatchRow({ match }: { match: Match }) {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {match.homeLogo ? (
-              <Image src={match.homeLogo} alt={match.homeTeam} width={24} height={24} className="object-contain" />
+              <SafeImage src={match.homeLogo} alt={match.homeTeam} width={24} height={24} className="h-6 w-6 object-contain" />
             ) : (
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
                 {match.homeTeam.substring(0, 2).toUpperCase()}
@@ -49,7 +49,7 @@ function MatchRow({ match }: { match: Match }) {
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {match.awayLogo ? (
-              <Image src={match.awayLogo} alt={match.awayTeam} width={24} height={24} className="object-contain" />
+              <SafeImage src={match.awayLogo} alt={match.awayTeam} width={24} height={24} className="h-6 w-6 object-contain" />
             ) : (
               <div className="flex h-6 w-6 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
                 {match.awayTeam.substring(0, 2).toUpperCase()}

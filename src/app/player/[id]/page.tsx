@@ -3,6 +3,8 @@ import Link from "next/link"
 import { getPlayerProfile } from "@/lib/api"
 import { Card, CardContent } from "@/components/ui/card"
 import FollowButton, { FollowersCountBadge } from "@/components/ui/follow-button"
+import { UserRound } from "lucide-react"
+import { SafeImage } from "@/components/ui/safe-image"
 import type { TeamMatch } from "@/lib/matches"
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -20,7 +22,7 @@ function formatTime(iso: string | null) {
 }
 
 function calculateAge(dob: string | null) {
-  if (!dob) return "Unknown"
+  if (!dob) return "Not available"
   const birthDate = new Date(dob)
   const today = new Date()
   let age = today.getFullYear() - birthDate.getFullYear()
@@ -59,16 +61,14 @@ export default async function PlayerPage({
   const profile = await getPlayerProfile(playerId)
   if (!profile) notFound()
 
-  const { player, followers, club, matches, stats } = profile
+  const { player, followers, club, matches, stats, seasonStats, ratingHistory } = profile
 
   /* Previous / Next match for the hero */
   const previousMatch = matches.find(m => m.status === "FT") ?? null
   const nextMatch = matches.find(m => m.status === "UPCOMING" || m.status === "LIVE") ?? null
 
-  const avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(player.name)}&background=random&color=fff&size=256`
   const followersFormatted = followers >= 1000000 ? (followers / 1000000).toFixed(1) + "M" : followers >= 1000 ? (followers / 1000).toFixed(1) + "K" : followers
-
-  const position = club?.position ?? "Unknown"
+  const position = player.position ?? "Not available"
 
   return (
     <div className="min-h-screen text-foreground">
@@ -81,10 +81,15 @@ export default async function PlayerPage({
 
               {/* ── Left: Player Identity ── */}
               <div className="flex items-start gap-5">
-                {/* Photo */}
-                <div className="h-28 w-28 shrink-0 overflow-hidden rounded-full bg-gray-100 shadow-sm border border-border">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={avatarUrl} alt={player.name} className="h-full w-full object-cover" />
+                  {/* Show only a verified stored/provider photo. */}
+                <div className="relative h-28 w-28 shrink-0 overflow-hidden rounded-full bg-gray-100 shadow-sm border border-border">
+                  {player.photo ? (
+                    <SafeImage src={player.photo} alt={player.name} fill sizes="112px" fallbackKind="person" className="object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-muted-foreground" aria-label="Player photo unavailable">
+                      <UserRound className="h-12 w-12" aria-hidden="true" />
+                    </div>
+                  )}
                 </div>
 
                 <div className="min-w-0 pt-2">
@@ -105,15 +110,14 @@ export default async function PlayerPage({
                     {club ? (
                       <Link href={`/team/${club.id}`} className="flex items-center gap-2 hover:underline">
                         {club.logo ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={club.logo} alt={club.name} className="h-5 w-5 object-contain" />
+                          <SafeImage src={club.logo} alt={club.name} width={20} height={20} className="h-5 w-5 object-contain" />
                         ) : (
                           <div className="h-5 w-5 rounded-full bg-gray-200" />
                         )}
                         <span>{club.name}</span>
                       </Link>
                     ) : (
-                      <span className="text-muted-foreground">Free Agent</span>
+                      <span className="text-muted-foreground">Club data unavailable</span>
                     )}
                   </div>
 
@@ -124,6 +128,11 @@ export default async function PlayerPage({
                         <span className="text-lg">🌍</span> {player.nationality}
                       </span>
                     )}
+                    {!player.nationality && (
+                      <span className="flex items-center gap-1.5">
+                        <span className="font-semibold text-foreground">Nationality:</span> Not available
+                      </span>
+                    )}
                     <span className="flex items-center gap-1.5">
                       <span className="font-semibold text-foreground">Age:</span> {calculateAge(player.dateOfBirth)}
                     </span>
@@ -131,13 +140,13 @@ export default async function PlayerPage({
                       <span className="font-semibold text-foreground">Position:</span> {position}
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="font-semibold text-foreground">Height:</span> Not available
+                      <span className="font-semibold text-foreground">Height:</span> {player.heightCm ? `${player.heightCm} cm` : "Not available"}
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="font-semibold text-foreground">Foot:</span> Not available
+                      <span className="font-semibold text-foreground">Foot:</span> {player.preferredFoot ?? "Not available"}
                     </span>
                     <span className="flex items-center gap-1.5">
-                      <span className="font-semibold text-foreground">No:</span> Not available
+                      <span className="font-semibold text-foreground">No:</span> {player.shirtNumber ?? "Not available"}
                     </span>
                   </div>
                 </div>
@@ -202,8 +211,7 @@ export default async function PlayerPage({
                   <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4">Current Club</h3>
                   <div className="flex items-center gap-4">
                     {club.logo ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={club.logo} alt={club.name} className="h-12 w-12 object-contain" />
+                      <SafeImage src={club.logo} alt={club.name} width={48} height={48} className="h-12 w-12 object-contain" />
                     ) : (
                       <div className="h-12 w-12 rounded-lg bg-gray-100 flex items-center justify-center text-gray-400 font-bold">
                         {club.name.substring(0,2).toUpperCase()}
@@ -242,21 +250,53 @@ export default async function PlayerPage({
 
                 {/* Stats Dashboard */}
                 <div className="p-8">
-                  <h2 className="text-xl font-bold mb-8">Performance Overview</h2>
+                  <h2 className="text-xl font-bold mb-2">Performance Overview</h2>
+                  <p className="mb-8 text-sm text-muted-foreground">
+                    {stats.trackedMatches > 0
+                      ? `Stored match data · ${stats.trackedMatches} tracked ${stats.trackedMatches === 1 ? "match" : "matches"}`
+                      : "No stored performance data"}
+                  </p>
                   
                   <div className="grid grid-cols-2 gap-8">
                     {/* Goals */}
                     <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-2xl border border-gray-100">
-                      <span className="text-6xl font-black text-gray-900 mb-2">{stats.totalGoals}</span>
+                      <span className="text-6xl font-black text-gray-900 mb-2">{stats.totalGoals ?? "—"}</span>
                       <span className="text-sm font-bold uppercase tracking-widest text-gray-500">Total Goals</span>
                     </div>
 
                     {/* Assists */}
                     <div className="flex flex-col items-center justify-center p-8 bg-gray-50 rounded-2xl border border-gray-100">
-                      <span className="text-6xl font-black text-gray-900 mb-2">{stats.totalAssists}</span>
+                      <span className="text-6xl font-black text-gray-900 mb-2">{stats.totalAssists ?? "—"}</span>
                       <span className="text-sm font-bold uppercase tracking-widest text-gray-500">Total Assists</span>
                     </div>
                   </div>
+                  {seasonStats.length > 0 && (
+                    <div className="mt-8 space-y-3">
+                      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Stored season statistics</h3>
+                      {seasonStats.map((season) => (
+                        <div key={`${season.competitionId}-${season.season ?? "unknown"}-${season.teamId ?? "unknown"}`} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gray-100 p-4 text-sm">
+                          <div className="font-medium">
+                            {season.competition}{season.season ? ` · ${season.season}` : " · season unavailable"}
+                            {season.team ? <span className="ml-2 text-muted-foreground">{season.team}</span> : null}
+                          </div>
+                          <div className="text-muted-foreground">
+                            {season.appearances} matches · {season.goals ?? "—"} goals · {season.assists ?? "—"} assists
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {ratingHistory.length > 0 && (
+                    <div className="mt-8 space-y-3">
+                      <h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Stored ratings</h3>
+                      {ratingHistory.map((entry, index) => (
+                        <div key={`${entry.season ?? "season"}-${entry.calculatedAt}-${index}`} className="flex items-center justify-between rounded-xl border border-gray-100 p-4 text-sm">
+                          <span>{entry.season ?? "Season unavailable"}</span>
+                          <span className="font-semibold">{entry.rating ?? "—"}{entry.rank == null ? "" : ` · Rank ${entry.rank}`}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -272,7 +312,6 @@ export default async function PlayerPage({
 
 function MiniMatchCard({ label, match, teamId }: { label: string; match: TeamMatch; teamId: number }) {
   const opponent = match.homeTeam.id === teamId ? match.awayTeam : match.homeTeam
-  const opponentLogo = opponent.logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(opponent.name)}&background=eee&color=333&size=32`
 
   return (
     <Link href={`/match/${match.id}`} className="block hover:opacity-80 transition-opacity">
@@ -281,8 +320,7 @@ function MiniMatchCard({ label, match, teamId }: { label: string; match: TeamMat
         <div className="mt-1 text-[10px] text-muted-foreground truncate">{match.tournament}</div>
         <div className="mt-1 text-[10px] text-muted-foreground">{formatDate(match.date)} • {formatTime(match.date)}</div>
         <div className="mt-2 flex items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={opponentLogo} alt={opponent.name} className="h-6 w-6 rounded-full object-cover" />
+          <SafeImage src={opponent.logo} alt={opponent.name} width={24} height={24} className="h-6 w-6 rounded-full object-contain" />
           <span className="truncate text-sm font-medium">{opponent.name}</span>
         </div>
         {match.status === "FT" && (

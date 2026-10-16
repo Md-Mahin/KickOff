@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MatchesWidget } from "@/components/team/matches-widget"
 import FollowButton, { FollowersCountBadge } from "@/components/ui/follow-button"
+import { SafeImage } from "@/components/ui/safe-image"
 import type { TeamMatch, TeamStanding, TeamStandingRow } from "@/lib/matches"
 
 /* ── Helpers ──────────────────────────────────────────────────────────── */
@@ -92,8 +93,6 @@ export default async function TeamPage({
   const nextMatch = upcomingSorted[0] ?? null
   const primaryLeague = tournaments[0]?.name ?? "—"
 
-  const avatarUrl = team.logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(team.name)}&background=0D8ABC&color=fff&size=128`
-
   return (
     <div className="min-h-screen text-foreground">
       <main className="mx-auto max-w-7xl px-4 py-6">
@@ -107,8 +106,7 @@ export default async function TeamPage({
               <div className="flex items-start gap-5">
                 {/* Logo */}
                 <div className="h-20 w-20 shrink-0 overflow-hidden rounded-xl bg-gray-100">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={avatarUrl} alt={team.name} className="h-full w-full object-cover" />
+                  <SafeImage src={team.logo} alt={team.name} width={80} height={80} className="h-full w-full object-contain p-2" />
                 </div>
 
                 <div className="min-w-0">
@@ -127,10 +125,12 @@ export default async function TeamPage({
                     {team.country && <span>🌍 {team.country}</span>}
                     <span className="flex items-center gap-1.5 font-medium text-foreground">
                       {team.manager?.photo ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
+                        <SafeImage
                           src={team.manager.photo}
                           alt={team.manager.name ?? "Manager"}
+                          width={20}
+                          height={20}
+                          fallbackKind="person"
                           className="h-5 w-5 rounded-full object-cover border border-slate-300 shadow-xs"
                         />
                       ) : (
@@ -219,7 +219,6 @@ export default async function TeamPage({
 
 function MiniMatchCard({ label, match, teamId }: { label: string; match: TeamMatch; teamId: number }) {
   const opponent = match.homeTeam.id === teamId ? match.awayTeam : match.homeTeam
-  const opponentLogo = opponent.logo || `https://ui-avatars.com/api/?name=${encodeURIComponent(opponent.name)}&background=eee&color=333&size=32`
 
   return (
     <div className="w-44 rounded-lg border border-border bg-card p-3">
@@ -234,14 +233,12 @@ function MiniMatchCard({ label, match, teamId }: { label: string; match: TeamMat
             href={`/team/${opponent.id}`}
             className="flex items-center gap-2 min-w-0 group hover:text-blue-600 transition-colors"
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={opponentLogo} alt={opponent.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+            <SafeImage src={opponent.logo} alt={opponent.name} width={24} height={24} className="h-6 w-6 rounded-full object-contain shrink-0" />
             <span className="truncate text-sm font-medium group-hover:underline">{opponent.name}</span>
           </Link>
         ) : (
           <div className="flex items-center gap-2 min-w-0">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={opponentLogo} alt={opponent.name} className="h-6 w-6 rounded-full object-cover shrink-0" />
+            <SafeImage src={opponent.logo} alt={opponent.name} width={24} height={24} className="h-6 w-6 rounded-full object-contain shrink-0" />
             <span className="truncate text-sm font-medium">{opponent.name}</span>
           </div>
         )}

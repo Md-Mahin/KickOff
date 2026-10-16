@@ -150,6 +150,9 @@ async function main() {
     const after429 = mockCalls;
     await assert.rejects(callApiFootball(track(`/fixtures/events?fixture=${testFixtureBase + 3002}`)), /cooldown active/);
     assert.equal(mockCalls, after429, "429 cooldown must pause subsequent requests");
+    const rateLimitedReport = await getApiFootballBudgetReport();
+    assert.ok(Date.parse(String(rateLimitedReport.retryAt)) - Date.now() >= 59_000,
+      "a short or zero Retry-After must still enforce a one-minute cooldown");
 
     await setTestQuota();
     const forbiddenPath = track(`/fixtures/events?fixture=${testFixtureBase + 4001}`);
@@ -167,7 +170,17 @@ async function main() {
       dashboardVerified: true, verifiedAt: new Date().toISOString() });
     assert.equal((await getApiFootballBudgetReport()).suspended, false, "manual reconciliation may clear the pause");
 
-    console.log("API-Football client tests passed: invalid key, daily/minute quota parsing, single-flight, negative cache, atomic 60/80 caps, 429 cooldown, 403 pause reason, and dashboard-guarded reconciliation.");
+    const forbiddenEndpointPath = track(`/fixtures/events?fixture=${testFixtureBase + 5001}`);
+    nextResponse = { status: 403, body: { errors: { message: "Access denied for this endpoint" } } };
+    await assert.rejects(callApiFootball(forbiddenEndpointPath), /API-Football 403/);
+    const forbiddenEndpointReport = await getApiFootballBudgetReport();
+    assert.equal(forbiddenEndpointReport.suspended, false,
+      "a generic 403 should pause requests without asserting the account itself is suspended");
+    assert.match(String(forbiddenEndpointReport.pauseReason), /HTTP 403/);
+    await reconcileApiFootballQuota({ remaining: 40, limit: 100, accountVerified: true, accountActive: true,
+      dashboardVerified: true, verifiedAt: new Date().toISOString() });
+
+    console.log("API-Football client tests passed: invalid key, daily/minute quota parsing, single-flight, negative cache, atomic 60/80 caps, minimum 429 cooldown, suspension classification, and dashboard-guarded reconciliation.");
   } finally {
     globalThis.fetch = originalFetch;
     await pool.query("DELETE FROM ApiFootballRequestLedger WHERE KeyFingerprint = ANY($1::varchar[])", [testKeys]);

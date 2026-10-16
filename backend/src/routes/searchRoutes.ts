@@ -6,20 +6,23 @@ const router = express.Router();
 
 router.get("/", async (req, res) => {
   try {
-    const query = req.query.q as string;
-    const filter = req.query.type as string || "All";
+    const query = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
+    const filter = typeof req.query.type === "string" ? req.query.type : "All";
 
     if (!query) {
       return res.json([]);
     }
 
-    const searchParam = `%${query}%`;
+    // Treat search text literally. Unescaped '%' and '_' otherwise turn a
+    // name search into an unexpectedly broad database scan.
+    const escapedQuery = query.replace(/[\\%_]/g, "\\$&");
+    const searchParam = `%${escapedQuery}%`;
     let results: any[] = [];
 
     // Search Teams
     if (filter === "All" || filter === "Team") {
       const teamRes = await pool.query(`
-        SELECT t.TeamID as id, t.Name as name, c.Name as country,
+        SELECT t.TeamID as id, t.Name as name, t.Logo as logo, c.Name as country,
           (SELECT COUNT(*)::int FROM UserFollowsTeam f WHERE f.TeamID = t.TeamID) AS followers
         FROM Team t
         LEFT JOIN Country c ON t.CountryID = c.CountryID
@@ -35,7 +38,7 @@ router.get("/", async (req, res) => {
         country: r.country || "Unknown",
         flag: "🌍",
         sport: "Football",
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(r.name)}&background=random`,
+        avatar: r.logo ?? null,
         type: "Team"
       }))];
     }
@@ -43,13 +46,18 @@ router.get("/", async (req, res) => {
     // Search Players
     if (filter === "All" || filter === "Player") {
       const playerRes = await pool.query(`
-        SELECT p.PlayerID as id, p.Name as name, c.Name as country,
+        SELECT p.PlayerID as id, p.Name as name, c.Name as country, p.Photo as photo,
           (SELECT COUNT(*)::int FROM UserFollowsPlayer f WHERE f.PlayerID = p.PlayerID) AS followers
         FROM Player p
         LEFT JOIN Country c ON p.NationalityCountryID = c.CountryID
-        WHERE p.Name ILIKE $1
-        LIMIT 5
-      `, [searchParam]);
+        WHERE p.Name ILIKE $1 ESCAPE E'\\\\'
+        ORDER BY
+          CASE WHEN LOWER(p.Name) = LOWER($2) THEN 0
+               WHEN LOWER(p.Name) LIKE LOWER($3) ESCAPE E'\\\\' THEN 1
+               ELSE 2 END,
+          followers DESC, p.Name ASC
+        LIMIT $4
+      `, [searchParam, escapedQuery, `${escapedQuery}%`, filter === "Player" ? 25 : 8]);
       
       results = [...results, ...playerRes.rows.map(r => ({
         id: `player-${r.id}`,
@@ -59,7 +67,7 @@ router.get("/", async (req, res) => {
         country: r.country || "Unknown",
         flag: "🌍",
         sport: "Football",
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(r.name)}&background=random`,
+        avatar: r.photo ?? null,
         type: "Player"
       }))];
     }
@@ -82,7 +90,7 @@ router.get("/", async (req, res) => {
         country: "International",
         flag: "🏆",
         sport: "Football",
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(r.name)}&background=random`,
+        avatar: null,
         type: "Competition"
       }))];
     }
@@ -101,11 +109,11 @@ router.get("/", async (req, res) => {
         id: `ref-${r.id}`,
         realId: r.id,
         name: r.name,
-        followers: "10K",
+        followers: "—",
         country: r.country || "Unknown",
         flag: "🌍",
         sport: "Football",
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(r.name)}&background=random`,
+        avatar: null,
         type: "Referee"
       }))];
     }
@@ -124,11 +132,11 @@ router.get("/", async (req, res) => {
         id: `venue-${r.id}`,
         realId: r.id,
         name: r.name,
-        followers: "50K",
+        followers: "—",
         country: r.country || "Unknown",
         flag: "🏟️",
         sport: "Football",
-        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(r.name)}&background=random`,
+        avatar: null,
         type: "Venue"
       }))];
     }

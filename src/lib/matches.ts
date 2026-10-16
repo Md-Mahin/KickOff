@@ -236,6 +236,11 @@ export type PlayerInfo = {
   name: string
   dateOfBirth: string | null
   nationality: string | null
+  position: string | null
+  photo: string | null
+  heightCm: number | null
+  preferredFoot: string | null
+  shirtNumber: number | null
   isFollowing?: boolean
 }
 
@@ -248,8 +253,27 @@ export type PlayerClubInfo = {
 }
 
 export type PlayerStats = {
-  totalGoals: number
-  totalAssists: number
+  totalGoals: number | null
+  totalAssists: number | null
+  trackedMatches: number
+}
+
+export type PlayerSeasonStats = {
+  competitionId: number
+  competition: string
+  season: string | null
+  teamId: number | null
+  team: string | null
+  appearances: number
+  goals: number | null
+  assists: number | null
+}
+
+export type PlayerRatingHistory = {
+  season: string | null
+  rating: number | null
+  rank: number | null
+  calculatedAt: string
 }
 
 export type PlayerProfile = {
@@ -259,6 +283,9 @@ export type PlayerProfile = {
   club: PlayerClubInfo | null
   matches: TeamMatch[]
   stats: PlayerStats
+  seasonStats: PlayerSeasonStats[]
+  ratingHistory: PlayerRatingHistory[]
+  provenance?: Record<string, { source: string; providerPlayerId?: number | null; retrievedAt?: string }>
 }
 
 // ── Tournament Profile Types ───────────────────────────────────────────────────

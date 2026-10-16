@@ -58,7 +58,29 @@ export async function initializeDatabase() {
     ALTER TABLE Player
       ADD COLUMN IF NOT EXISTS Position VARCHAR(10),
       ADD COLUMN IF NOT EXISTS Photo TEXT,
+      ADD COLUMN IF NOT EXISTS HeightCm SMALLINT,
+      ADD COLUMN IF NOT EXISTS PreferredFoot VARCHAR(10),
+      ADD COLUMN IF NOT EXISTS ApiPlayerID BIGINT,
+      ADD COLUMN IF NOT EXISTS ApiPlayerTeamID BIGINT,
+      ADD COLUMN IF NOT EXISTS ApiPlayerLeagueID BIGINT,
       ADD COLUMN IF NOT EXISTS OverallRating NUMERIC(4, 2) DEFAULT 6.00;
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = 'player'
+          AND column_name = 'apiplayerid' AND data_type = 'integer') THEN
+        ALTER TABLE Player ALTER COLUMN ApiPlayerID TYPE BIGINT USING ApiPlayerID::BIGINT;
+      END IF;
+    END $$;
+    CREATE TABLE IF NOT EXISTS PlayerFieldProvenance (
+      PlayerID INT NOT NULL REFERENCES Player(PlayerID) ON DELETE CASCADE,
+      FieldName VARCHAR(40) NOT NULL,
+      Source VARCHAR(40) NOT NULL,
+      ProviderPlayerID BIGINT,
+      RetrievedAt TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (PlayerID, FieldName)
+    );
+    DROP INDEX IF EXISTS idx_player_api_id;
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_player_api_id ON Player(ApiPlayerID) WHERE ApiPlayerID IS NOT NULL;
 
     ALTER TABLE Team
       ADD COLUMN IF NOT EXISTS CoachName VARCHAR(255),
@@ -75,6 +97,7 @@ export async function initializeDatabase() {
     ALTER TABLE Match ADD COLUMN IF NOT EXISTS MatchStage VARCHAR(100);
     ALTER TABLE Event ADD COLUMN IF NOT EXISTS EventExtraTime INT;
     ALTER TABLE Event ADD COLUMN IF NOT EXISTS EventDetail VARCHAR(255);
+    ALTER TABLE Tournament ADD COLUMN IF NOT EXISTS Country VARCHAR(100);
     SELECT setval(
       pg_get_serial_sequence('team', 'teamid'),
       COALESCE((SELECT MAX(teamid) FROM team), 0) + 1,

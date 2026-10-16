@@ -71,8 +71,9 @@ async function requestSportsDb<T>(path: string, force = false): Promise<T> {
   const request = requestQueue.then(async () => {
     await ensureRequestCache();
     const endpoint = `tds-${createHash("sha1").update(path).digest("hex").slice(0, 12)}`;
-    const client = await pool.connect();
+    let client = await pool.connect();
     let locked = false;
+    let clientReleased = false;
     try {
       await client.query("SELECT pg_advisory_lock($1)", [RATE_LIMIT_LOCK_ID]);
       locked = true;
@@ -90,23 +91,57 @@ async function requestSportsDb<T>(path: string, force = false): Promise<T> {
         "SELECT Payload FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = $1",
         [RATE_LIMIT_ENDPOINT]
       );
-      const state = stateResult.rows[0]?.payload ?? {};
+      let state = stateResult.rows[0]?.payload ?? {};
+      const keyFingerprint = createHash("sha256").update(key).digest("hex").slice(0, 16);
+      if (state.paused) {
+        throw new Error(`TheSportsDB is paused: ${state.pauseReason ?? "manual provider verification is required"}`);
+      }
+      if (state.keyFingerprint && state.keyFingerprint !== keyFingerprint) {
+        await persistRateLimitState(client, { ...state, paused: true,
+          pauseReason: "TheSportsDB key changed; verify account access and rate limits before resuming" });
+        throw new Error("TheSportsDB is paused: key changed; provider verification is required");
+      }
       const retryAt = state.retryAt ? new Date(state.retryAt).getTime() : 0;
       if (retryAt > Date.now()) {
         throw new Error(`TheSportsDB cooldown active until ${new Date(retryAt).toISOString()}`);
       }
 
       const persistedNext = state.nextAllowedAt ? new Date(state.nextAllowedAt).getTime() : 0;
-      const delay = Math.max(0, lastRequestAt + REQUEST_INTERVAL_MS - Date.now(), persistedNext - Date.now());
-      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-      const nextAllowedAt = Date.now() + REQUEST_INTERVAL_MS;
+      const slotAt = Math.max(Date.now(), lastRequestAt + REQUEST_INTERVAL_MS, persistedNext);
+      const nextAllowedAt = slotAt + REQUEST_INTERVAL_MS;
       await persistRateLimitState(client, { ...state, nextAllowedAt: new Date(nextAllowedAt).toISOString() });
-      const response = await fetch(`https://www.thesportsdb.com/api/v1/json/${encodeURIComponent(key)}/${path}`, {
-        cache: "no-store",
-        signal: AbortSignal.timeout(10_000),
-      });
-      lastRequestAt = Date.now();
+      await client.query("SELECT pg_advisory_unlock($1)", [RATE_LIMIT_LOCK_ID]);
+      locked = false;
+      client.release();
+      clientReleased = true;
+
+      const delay = Math.max(0, slotAt - Date.now());
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+      let response: Response;
+      let body: T | null = null;
+      try {
+        response = await fetch(`https://www.thesportsdb.com/api/v1/json/${encodeURIComponent(key)}/${path}`, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (response.ok) body = await response.json() as T;
+      } finally {
+        lastRequestAt = Date.now();
+      }
+
+      client = await pool.connect();
+      clientReleased = false;
+      await client.query("SELECT pg_advisory_lock($1)", [RATE_LIMIT_LOCK_ID]);
+      locked = true;
+      const latestState = await client.query("SELECT Payload FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = $1", [RATE_LIMIT_ENDPOINT]);
+      state = latestState.rows[0]?.payload ?? state;
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          await persistRateLimitState(client, { ...state, keyFingerprint, paused: true,
+            pauseReason: `HTTP ${response.status}; verify the API key, account access, and documented endpoint before resuming`,
+            lastStatus: response.status, lastStatusAt: new Date().toISOString(), retryAt: null });
+          throw new Error(`TheSportsDB paused after HTTP ${response.status}; verify API key and account access`);
+        }
         if (response.status === 429 || response.status >= 500) {
           const failures = Math.min(Number(state.failures ?? 0) + 1, 6);
           const fallback = response.status === 429
@@ -119,6 +154,7 @@ async function requestSportsDb<T>(path: string, force = false): Promise<T> {
             : Number.isFinite(retryDate) ? retryDate - Date.now() : fallback;
           const cooldownMs = Math.max(60_000, serverDelay);
           await persistRateLimitState(client, {
+            ...state, keyFingerprint, lastStatus: response.status, lastStatusAt: new Date().toISOString(),
             nextAllowedAt: new Date(nextAllowedAt).toISOString(),
             retryAt: new Date(Date.now() + cooldownMs).toISOString(),
             failures,
@@ -126,16 +162,17 @@ async function requestSportsDb<T>(path: string, force = false): Promise<T> {
         }
         throw new Error(`TheSportsDB returned ${response.status}`);
       }
-      const body = await response.json() as T;
       await client.query(`INSERT INTO MatchApiCache (MatchID, Endpoint, Payload, FetchedAt)
         VALUES (0, $1, $2::jsonb, CURRENT_TIMESTAMP)
         ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`,
         [endpoint, JSON.stringify(body)]);
-      await persistRateLimitState(client, { nextAllowedAt: new Date(nextAllowedAt).toISOString(), failures: 0, retryAt: null });
+      await persistRateLimitState(client, { ...state, keyFingerprint, paused: false, pauseReason: null,
+        lastStatus: response.status, lastStatusAt: new Date().toISOString(),
+        nextAllowedAt: new Date(nextAllowedAt).toISOString(), failures: 0, retryAt: null });
       return body;
     } finally {
       if (locked) await client.query("SELECT pg_advisory_unlock($1)", [RATE_LIMIT_LOCK_ID]);
-      client.release();
+      if (!clientReleased) client.release();
     }
   });
   requestQueue = request.then(() => undefined, () => undefined);

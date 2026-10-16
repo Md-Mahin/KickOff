@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
+import { SafeImage } from "@/components/ui/safe-image"
 import { Badge } from "@/components/ui/badge"
 import type { MatchWithLeague, Match } from "@/lib/matches"
 
@@ -38,14 +38,7 @@ function FeaturedMatchCard({ match }: { match: MatchWithLeague }) {
             {/* Home Team */}
             <div className="flex items-center gap-2">
               {match.homeLogo ? (
-                <Image
-                  src={match.homeLogo}
-                  alt={match.homeTeam}
-                  width={18}
-                  height={18}
-                  className="object-contain shrink-0"
-                  style={{ width: "auto", height: "auto" }}
-                />
+                <SafeImage src={match.homeLogo} alt={match.homeTeam} width={18} height={18} className="h-[18px] w-[18px] object-contain shrink-0" />
               ) : (
                 <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
                   {match.homeTeam.substring(0, 2).toUpperCase()}
@@ -60,14 +53,7 @@ function FeaturedMatchCard({ match }: { match: MatchWithLeague }) {
             {/* Away Team */}
             <div className="flex items-center gap-2">
               {match.awayLogo ? (
-                <Image
-                  src={match.awayLogo}
-                  alt={match.awayTeam}
-                  width={18}
-                  height={18}
-                  className="object-contain shrink-0"
-                  style={{ width: "auto", height: "auto" }}
-                />
+                <SafeImage src={match.awayLogo} alt={match.awayTeam} width={18} height={18} className="h-[18px] w-[18px] object-contain shrink-0" />
               ) : (
                 <div className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-muted text-[8px] font-bold">
                   {match.awayTeam.substring(0, 2).toUpperCase()}

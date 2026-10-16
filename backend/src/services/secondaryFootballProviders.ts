@@ -1,20 +1,26 @@
 import { syncFootballDataRange, syncFootballDataToday } from "./footballDataClient";
 import { syncSportsDbToday, syncSportsDbRange } from "./sportsDbClient";
 
+function reportProviderFailure(provider: string, error: unknown) {
+  const message = (error as Error).message;
+  if (/\bpaused\b|cooldown active|dashboard reconciliation is required/i.test(message)) return;
+  console.warn(`[Provider] ${provider} unavailable: ${message}`);
+}
+
 export async function syncSecondaryFootballProvidersToday(): Promise<void> {
   let count = 0;
   if (process.env.FOOTBALL_DATA_TOKEN) {
     try {
       count = await syncFootballDataToday();
     } catch (error) {
-      console.warn(`[Provider] football-data.org unavailable: ${(error as Error).message}`);
+      reportProviderFailure("football-data.org", error);
     }
   }
   if (count === 0 && process.env.SPORTSDB_API_KEY) {
     try {
       await syncSportsDbToday();
     } catch (error) {
-      console.warn(`[Provider] TheSportsDB unavailable: ${(error as Error).message}`);
+      reportProviderFailure("TheSportsDB", error);
     }
   }
 }
@@ -37,19 +43,19 @@ export async function syncSecondaryFootballProvidersRange(from: string, through:
             chunkEnd.toISOString().slice(0, 10),
           );
         } catch (error) {
-          console.warn(`[Provider] football-data.org range unavailable: ${(error as Error).message}`);
+          reportProviderFailure("football-data.org range", error);
         }
         rangeStart = chunkEnd;
       }
     } catch (error) {
-      console.warn(`[Provider] football-data.org unavailable: ${(error as Error).message}`);
+      reportProviderFailure("football-data.org", error);
     }
   }
   if (process.env.SPORTSDB_API_KEY) {
     try {
       count += await syncSportsDbRange(from, through);
     } catch (error) {
-      console.warn(`[Provider] Secondary football providers unavailable: ${(error as Error).message}`);
+      reportProviderFailure("Secondary football providers", error);
     }
   }
   return count;
