@@ -81,6 +81,13 @@ router.get("/:id/details", async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid match ID" });
     }
 
+    const requestPurpose = [req.headers.purpose, req.headers["sec-purpose"]]
+      .flatMap((value) => Array.isArray(value) ? value : value ? [value] : []).join(" ").toLowerCase();
+    if (req.headers["next-router-prefetch"] || requestPurpose.includes("prefetch")) {
+      const cachedDetails = await pullMatchDetailsFromDatabase(id);
+      return cachedDetails ? res.json(cachedDetails) : res.status(404).json({ message: "Match not found" });
+    }
+
     // Execute the strict 3-step pipeline
     const matchDetails = await executeMatchDetailPipeline(id);
     return res.json(matchDetails);

@@ -4,11 +4,18 @@ import { callApiFootball as requestApiFootball } from "./apiFootballClient";
 import { syncFixtureToDb, upsertApiPlayer, upsertApiTeam, upsertApiTournament } from "./footballService";
 import { syncSecondaryFootballProvidersToday } from "./secondaryFootballProviders";
 import { getMissingDetailCategories, PROVIDER_CAPABILITIES, type DetailCategory } from "./providerCapabilities";
+import { loadSofaScoreRapidApiMatchDetails, loadSportApiMatchDetails } from "./sportApiClient";
+import {
+  canonicalTeamName, isMatchDetailSnapshotFresh,
+  matchDetailSnapshotTtl, mergeMatchDetails, mergeVerifiedProviderFallback, selectVerifiedProviderFixture,
+} from "./matchDetailsMerge";
 
 const todayStr = () => new Date().toISOString().split("T")[0];
 const matchDetailInFlight = new Map<number, Promise<boolean>>();
 const fallbackRangeInFlight = new Map<string, Promise<void>>();
 const fallbackRangeCheckedAt = new Map<string, number>();
+
+const sameTeamName = (left: string, right: string) => canonicalTeamName(left) !== "" && canonicalTeamName(left) === canonicalTeamName(right);
 
 function enrichMappedProviderMatchOnce(fixtureId: number, status: string) {
   const existing = matchDetailInFlight.get(fixtureId);
@@ -788,9 +795,129 @@ async function hydrateMatch(matchId: number) {
 }
 
 async function loadAlternateProviderDetails(match: any) {
-  if (!process.env.FOOTBALL_DATA_TOKEN && !process.env.SPORTSDB_API_KEY) return null;
+  if (!process.env.FOOTBALL_DATA_TOKEN && !process.env.SPORTSDB_API_KEY && !process.env.API_FOOTBALL_KEY && !process.env.SPORTAPI_AI_KEY && !process.env.SPORTAPI_API_KEY && !process.env.SOFASCORE_RAPIDAPI_KEY) return null;
   const date = new Date(match.fixture.date).toISOString().slice(0, 10);
-  if (Date.now() - (fallbackRangeCheckedAt.get(date) ?? 0) < 15 * 60_000) return null;
+  let combined: any = null;
+  let workingMatch = match;
+  let missing = getMissingDetailCategories(workingMatch);
+
+  if ((process.env.SPORTAPI_AI_KEY || process.env.SPORTAPI_API_KEY) && missing.some((category) =>
+    ["venue", "events", "lineups", "coaches", "substitutes", "playerStats", "playerRatings", "statistics", "headToHead", "standings"].includes(category),
+  )) {
+    try {
+      const details = await loadSportApiMatchDetails(workingMatch, missing);
+      if (details) {
+        combined = details;
+        workingMatch = mergeAlternateMatchDetails(workingMatch, details);
+        missing = getMissingDetailCategories(workingMatch);
+      }
+    } catch (error) {
+      console.warn(`[Provider] SportAPI.ai could not fill match details: ${(error as Error).message}`);
+    }
+  }
+
+  // football-data.org's free tier often returns match scores without the deep
+  // detail fields. Find the same fixture in API-Football and hydrate its full
+  // detail payload rather than leaving the match centre empty.
+  if (process.env.API_FOOTBALL_KEY && Number(match._apiFixtureId ?? 0) >= 7_000_000_000_000 && (missing.length > 0 || !workingMatch.standings?.length)) {
+    try {
+      const candidates = await pool.query(`
+        SELECT m.ApiFixtureID, home.Name AS HomeTeamName, away.Name AS AwayTeamName
+        FROM Match m
+        JOIN Team home ON home.TeamID = m.HomeTeamID
+        JOIN Team away ON away.TeamID = m.AwayTeamID
+        WHERE m.ApiFixtureID IS NOT NULL AND m.ApiFixtureID < 7000000000000
+          AND m.MatchDate::date = $1::date
+      `, [date]);
+      const mappedRows = candidates.rows.filter((row) =>
+        sameTeamName(row.hometeamname, workingMatch.teams.home.name) && sameTeamName(row.awayteamname, workingMatch.teams.away.name),
+      );
+      let fixtureId = mappedRows.length === 1 ? Number(mappedRows[0].apifixtureid) : 0;
+      let apiFixtureMeta: any = null;
+      if (mappedRows.length > 1) console.warn(`[Provider] Ambiguous API-Football mapping for ${workingMatch.teams.home.name} vs ${workingMatch.teams.away.name}; skipping`);
+
+      if (!fixtureId && mappedRows.length === 0) {
+        const fixtures = await callApiFootball(`/fixtures?date=${date}&timezone=UTC`);
+        const fixture = selectVerifiedProviderFixture(fixtures, workingMatch.teams.home.name, workingMatch.teams.away.name, workingMatch.fixture.date);
+        if (fixture?.fixture?.id) {
+          await syncFixtureToDb(fixture);
+          fixtureId = Number(fixture.fixture.id);
+          apiFixtureMeta = fixture;
+        }
+      }
+
+      if (fixtureId) {
+        const requests: Promise<any>[] = [];
+        if (missing.some((category) => ["lineups", "coaches", "substitutes"].includes(category))) {
+          requests.push(getCachedMatchEndpoint(fixtureId, "lineups"));
+        }
+        if (missing.includes("events")) requests.push(getCachedMatchEndpoint(fixtureId, "events"));
+        await Promise.all(requests);
+        let detailed = await pullMatchDetailsFromDatabase(fixtureId);
+        if (detailed) {
+          const apiId = Number(detailed._apiFixtureId ?? fixtureId);
+          const stillMissing = getMissingDetailCategories(mergeAlternateMatchDetails(workingMatch, detailed));
+          if (!apiFixtureMeta && stillMissing.some((category) => ["headToHead", "standings"].includes(category))) {
+            const fixtureRows = await callApiFootball(`/fixtures?id=${apiId}`);
+            const verifiedMeta = selectVerifiedProviderFixture(fixtureRows, workingMatch.teams.home.name, workingMatch.teams.away.name, workingMatch.fixture.date);
+            if (verifiedMeta && Number(verifiedMeta.fixture?.id) === apiId) apiFixtureMeta = verifiedMeta;
+          }
+          combined = combined ? mergeAlternateMatchDetails(combined, detailed) : detailed;
+          workingMatch = mergeAlternateMatchDetails(workingMatch, detailed);
+          if (stillMissing.includes("headToHead")) {
+            const homeId = Number(apiFixtureMeta?.teams?.home?.id);
+            const awayId = Number(apiFixtureMeta?.teams?.away?.id);
+            if (homeId > 0 && awayId > 0) {
+              const meetings = await callApiFootball(`/fixtures/headtohead?h2h=${homeId}-${awayId}&last=10`);
+              const h2h = meetings.map((item: any) => ({
+                id: Number(item.fixture?.id), date: item.fixture?.date,
+                homeTeam: item.teams?.home?.name ?? "", awayTeam: item.teams?.away?.name ?? "",
+                homeScore: item.goals?.home ?? null, awayScore: item.goals?.away ?? null,
+              })).filter((item: any) => item.id && item.homeTeam && item.awayTeam);
+              detailed = { ...detailed, headToHead: h2h };
+              combined = mergeAlternateMatchDetails(combined, detailed);
+              workingMatch = mergeAlternateMatchDetails(workingMatch, detailed);
+            }
+          }
+          if (stillMissing.includes("playerStats") && apiId < 7_000_000_000_000 && detailed._databaseMatchId != null) {
+            await syncApiFootballPlayerStats(apiId, detailed._databaseMatchId, detailed.fixture.status.short);
+            detailed = await pullMatchDetailsFromDatabase(fixtureId) ?? detailed;
+            combined = mergeAlternateMatchDetails(combined, detailed);
+            workingMatch = mergeAlternateMatchDetails(workingMatch, detailed);
+          }
+          if (!workingMatch.standings?.length) {
+            const apiLeagueId = Number(apiFixtureMeta?.league?.id);
+            const season = Number(apiFixtureMeta?.league?.season);
+            if (apiLeagueId > 0 && season > 1900) {
+              const tableResponse = await callApiFootball(`/standings?league=${apiLeagueId}&season=${season}`);
+              const table = tableResponse[0]?.league?.standings?.flat?.() ?? [];
+              const relevant = table.filter((row: any) =>
+              sameTeamName(row.team?.name ?? "", workingMatch.teams.home.name) ||
+              sameTeamName(row.team?.name ?? "", workingMatch.teams.away.name),
+              ).map((row: any) => ({
+                teamId: Number(row.team?.id), teamName: row.team?.name ?? "",
+                rank: row.rank == null ? null : Number(row.rank),
+                wins: Number(row.all?.win ?? 0), draws: Number(row.all?.draw ?? 0), losses: Number(row.all?.lose ?? 0),
+                goalsFor: Number(row.all?.goals?.for ?? 0), goalsAgainst: Number(row.all?.goals?.against ?? 0),
+                points: row.points == null ? null : Number(row.points),
+              }));
+              if (relevant.length) {
+                combined = { ...combined, standings: relevant };
+                workingMatch = { ...workingMatch, standings: relevant };
+              }
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`[Provider] API-Football could not fill match details: ${(error as Error).message}`);
+    }
+  }
+
+  if (!workingMatch.standings?.length && !getMissingDetailCategories(workingMatch).some((category) => ["venue", "referee", "events", "lineups", "coaches", "substitutes", "playerStats", "playerRatings", "statistics", "headToHead"].includes(category))) {
+    return loadSofaScoreLastResort(workingMatch, combined);
+  }
+  if (Date.now() - (fallbackRangeCheckedAt.get(date) ?? 0) < 15 * 60_000) return loadSofaScoreLastResort(workingMatch, combined);
   let sync = fallbackRangeInFlight.get(date);
   if (!sync) {
     sync = import("./secondaryFootballProviders.js").then(({ syncSecondaryFootballProvidersRange }) =>
@@ -805,14 +932,12 @@ async function loadAlternateProviderDetails(match: any) {
 
   const currentId = Number(match._apiFixtureId ?? 0);
   const candidates = await pool.query(`
-    SELECT m.ApiFixtureID
+    SELECT m.ApiFixtureID, home.Name AS HomeTeamName, away.Name AS AwayTeamName
     FROM Match m
     JOIN Team home ON home.TeamID = m.HomeTeamID
     JOIN Team away ON away.TeamID = m.AwayTeamID
     WHERE m.ApiFixtureID IS NOT NULL AND m.ApiFixtureID <> $1::bigint
       AND m.MatchDate::date = $2::date
-      AND LOWER(TRIM(home.Name)) = LOWER(TRIM($3))
-      AND LOWER(TRIM(away.Name)) = LOWER(TRIM($4))
       AND m.ApiFixtureID >= 7000000000000 AND m.ApiFixtureID < 9000000000000
       AND CASE
         WHEN $1::bigint >= 7000000000000 AND $1::bigint < 8000000000000
@@ -822,20 +947,46 @@ async function loadAlternateProviderDetails(match: any) {
         ELSE TRUE
       END
     ORDER BY CASE WHEN m.ApiFixtureID >= 8000000000000 THEN 0 ELSE 1 END
-    LIMIT 2`, [currentId, date, match.teams.home.name, match.teams.away.name]);
-  if (candidates.rows.length > 1) {
+    LIMIT 50`, [currentId, date]);
+  const matchingCandidates = candidates.rows.filter((row) =>
+    sameTeamName(row.hometeamname, match.teams.home.name) && sameTeamName(row.awayteamname, match.teams.away.name),
+  );
+  if (matchingCandidates.length > 1) {
     console.warn(`[Provider] Ambiguous alternate mapping for ${match.teams.home.name} vs ${match.teams.away.name}; skipping cross-provider attachment`);
-    return null;
+    return loadSofaScoreLastResort(workingMatch, combined);
   }
-  const alternateId = Number(candidates.rows[0]?.apifixtureid);
-  if (!alternateId) return null;
+  const alternateId = Number(matchingCandidates[0]?.apifixtureid);
+  if (!alternateId) return loadSofaScoreLastResort(workingMatch, combined);
   try {
     await enrichMappedProviderMatchOnce(alternateId, match.fixture.status.short);
-    return await pullMatchDetailsFromDatabase(alternateId);
+    const secondary = await pullMatchDetailsFromDatabase(alternateId);
+    const withSecondary = secondary ? combined ? mergeAlternateMatchDetails(combined, secondary) : secondary : combined;
+    const primaryForSofa = secondary ? mergeAlternateMatchDetails(workingMatch, secondary) : workingMatch;
+    return loadSofaScoreLastResort(primaryForSofa, withSecondary);
   } catch (error) {
     console.warn(`[Provider] Alternate details unavailable for ${alternateId}: ${(error as Error).message}`);
-    return null;
+    return loadSofaScoreLastResort(workingMatch, combined);
   }
+}
+
+async function loadSofaScoreLastResort(match: any, combined: any) {
+  if (!process.env.SOFASCORE_RAPIDAPI_KEY || !process.env.SOFASCORE_RAPIDAPI_HOST) return combined;
+  const essentialMissing = getMissingDetailCategories(match).filter((category) =>
+    ["venue", "referee", "events", "lineups", "coaches", "substitutes", "statistics"].includes(category),
+  );
+  if (!essentialMissing.length) return combined;
+  try {
+    const details = await loadSofaScoreRapidApiMatchDetails(match, essentialMissing);
+    if (!details) return combined;
+    return combined ? mergeAlternateMatchDetails(combined, details) : details;
+  } catch (error) {
+    console.warn(`[Provider] SportAPI RapidAPI could not fill match details: ${(error as Error).message}`);
+    return combined;
+  }
+}
+
+function mergeAlternateMatchDetails(primary: any, fallback: any) {
+  return mergeVerifiedProviderFallback(primary, fallback);
 }
 
 async function syncApiFootballPlayerStats(fixtureId: number, databaseMatchId: number, status: string) {
@@ -846,7 +997,7 @@ async function syncApiFootballPlayerStats(fixtureId: number, databaseMatchId: nu
   if (cache.rows[0]) {
     const age = Date.now() - new Date(cache.rows[0].fetchedat).getTime();
     const hasStats = Array.isArray(cache.rows[0].payload) && cache.rows[0].payload.length > 0;
-    const ttl = status === "LIVE" ? 2 * 60_000 : status === "FT" ? (hasStats ? 7 : 1) * 24 * 60 * 60_000 : 30 * 60_000;
+    const ttl = status === "LIVE" ? 2 * 60_000 : status === "FT" ? (hasStats ? 7 * 24 * 60 * 60_000 : 5 * 60_000) : 30 * 60_000;
     if (age < ttl) return;
   }
   const response = await callApiFootball(`/fixtures/players?fixture=${fixtureId}`);
@@ -1017,45 +1168,52 @@ export function getCachedMatchEndpoint(matchId: number, endpoint: 'events' | 'li
   return request;
 }
 
+async function loadApiFootballTeamStatistics(match: any, sourceFixtureId?: number | null) {
+  const fixtureId = Number(sourceFixtureId ?? match._apiFixtureId ?? 0);
+  if (!fixtureId || fixtureId >= 7_000_000_000_000 || match.fixture.status.short === "UPCOMING") return null;
+
+  const cached = await pool.query(
+    "SELECT Payload, FetchedAt FROM MatchApiCache WHERE MatchID = $1 AND Endpoint = 'statistics'",
+    [fixtureId],
+  );
+  const live = match.fixture.status.short === "LIVE";
+  const hasCachedData = Array.isArray(cached.rows[0]?.payload) && cached.rows[0].payload.length >= 2;
+  const ttl = live ? 2 * 60_000 : hasCachedData ? 24 * 60 * 60_000 : 5 * 60_000;
+  const age = cached.rows[0] ? Date.now() - new Date(cached.rows[0].fetchedat).getTime() : Infinity;
+  let payload = cached.rows[0]?.payload;
+  if (age >= ttl) {
+    payload = await callApiFootball(`/fixtures/statistics?fixture=${fixtureId}`);
+    await pool.query(`INSERT INTO MatchApiCache (MatchID, Endpoint, Payload, FetchedAt)
+      VALUES ($1, 'statistics', $2::jsonb, CURRENT_TIMESTAMP)
+      ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`,
+      [fixtureId, JSON.stringify(payload)]);
+  }
+
+  if (!Array.isArray(payload) || payload.length < 2) return null;
+  const toTeam = (block: any, fallback: any) => ({
+    teamId: Number(block.team?.id ?? fallback.id),
+    teamName: block.team?.name ?? fallback.name,
+    values: Object.fromEntries((block.statistics ?? []).filter((item: any) => item?.type)
+      .map((item: any) => [item.type, item.value ?? null])),
+  });
+  const home = payload.find((block: any) => sameTeamName(block.team?.name ?? "", match.teams.home.name));
+  const away = payload.find((block: any) => sameTeamName(block.team?.name ?? "", match.teams.away.name));
+  if (!home || !away) return null;
+  return { home: toTeam(home, match.teams.home), away: toTeam(away, match.teams.away) };
+}
+
 async function applyFieldLevelFallback(match: any): Promise<{ match: any; providerId: number | null }> {
   const missing = getMissingDetailCategories(match);
   const enrichable = missing.some((category) =>
-    ["venue", "referee", "events", "lineups", "coaches", "substitutes"].includes(category),
+    ["venue", "referee", "events", "lineups", "coaches", "substitutes", "playerStats", "playerRatings", "statistics", "headToHead"].includes(category),
   );
   if (!enrichable) return { match, providerId: null };
 
   try {
     const alternate = await loadAlternateProviderDetails(match);
     if (!alternate) return { match, providerId: null };
-    const mergeLineup = (primary: any, fallback: any) => {
-      if (!primary) return fallback;
-      if (!fallback) return primary;
-      return {
-        ...primary,
-        formation: primary.formation ?? fallback.formation,
-        coach: primary.coach?.name ? primary.coach : fallback.coach,
-        starters: primary.starters?.length ? primary.starters : fallback.starters ?? [],
-        substitutes: primary.substitutes?.length ? primary.substitutes : fallback.substitutes ?? [],
-        unavailable: primary.unavailable?.length ? primary.unavailable : fallback.unavailable ?? [],
-      };
-    };
-    return {
-      providerId: alternate._apiFixtureId ?? null,
-      match: {
-        ...match,
-        events: match.events?.length ? match.events : alternate.events ?? [],
-        lineups: [0, 1].map((index) => mergeLineup(match.lineups?.[index], alternate.lineups?.[index])),
-        fixture: {
-          ...match.fixture,
-          venue: match.fixture?.venue ?? alternate.fixture?.venue,
-          referees: match.fixture?.referees?.length ? match.fixture.referees : alternate.fixture?.referees ?? [],
-        },
-        league: {
-          ...match.league,
-          country: match.league?.country === "International" ? alternate.league?.country : match.league?.country,
-        },
-      },
-    };
+    const merged = mergeAlternateMatchDetails(match, alternate);
+    return { providerId: merged._fallbackProviderIds?.[0] ?? null, match: merged };
   } catch (error) {
     console.warn(`[fallback] Alternate provider could not fill match details: ${(error as Error).message}`);
     return { match, providerId: null };
@@ -1065,25 +1223,60 @@ async function applyFieldLevelFallback(match: any): Promise<{ match: any; provid
 export async function executeMatchDetailPipeline(matchId: number) {
   const dbData = await hydrateMatch(matchId);
   if (!dbData) throw new Error(`Match ${matchId} not found in PostgreSQL or without a verified provider mapping`);
-  const [lineups, events] = await Promise.all([
-    getCachedMatchEndpoint(matchId, 'lineups'), getCachedMatchEndpoint(matchId, 'events'),
-  ]);
-  let match = events?.match ?? lineups?.match ?? dbData;
-  const fallback = await applyFieldLevelFallback(match);
-  match = fallback.match;
-  const fallbackProviderId = fallback.providerId;
+  const snapshotResult = await pool.query("SELECT Payload, FetchedAt FROM MatchApiCache WHERE MatchID = $1 AND Endpoint = 'detail-snapshot'", [dbData._databaseMatchId]);
+  const snapshot = snapshotResult.rows[0]?.payload;
+  const snapshotFresh = isMatchDetailSnapshotFresh(snapshot, snapshotResult.rows[0]?.fetchedat)
+    && snapshot?.status === dbData.fixture.status.short;
+  let match: any;
+  let fallbackProviderId: number | null = null;
+  if (snapshotFresh && snapshot?.details) {
+    match = mergeMatchDetails(dbData, snapshot.details);
+  } else {
+    const [lineups, events] = await Promise.all([
+      getCachedMatchEndpoint(matchId, 'lineups'), getCachedMatchEndpoint(matchId, 'events'),
+    ]);
+    match = events?.match ?? lineups?.match ?? dbData;
+    const fallback = await applyFieldLevelFallback(match);
+    match = fallback.match;
+    fallbackProviderId = fallback.providerId;
+  }
+  let teamStatistics = match.teamStatistics ?? null;
+  try {
+    if (!teamStatistics?.home || !teamStatistics?.away) {
+      const apiFootballId = (match._fallbackProviderIds ?? []).map(Number).find((id: number) => id > 0 && id < 7_000_000_000_000)
+        ?? (Number(match._apiFixtureId) < 7_000_000_000_000 ? Number(match._apiFixtureId) : fallbackProviderId);
+      teamStatistics = await loadApiFootballTeamStatistics(match, apiFootballId) ?? teamStatistics;
+    }
+  } catch (error) {
+    console.warn(`[API] Team statistics unavailable: ${(error as Error).message}`);
+  }
 
-  const providerEndpoint = Number(match._apiFixtureId ?? 0) >= 8_000_000_000_000 ? "tds-detail" : "fd-detail";
+  const matchProviderId = Number(match._apiFixtureId ?? 0);
+  const providerEndpoint = matchProviderId >= 9_000_000_000_000 ? "sapi-detail"
+    : matchProviderId >= 8_000_000_000_000 ? "tds-detail" : "fd-detail";
   const providerCache = match._apiFixtureId == null ? null : await pool.query(
     "SELECT Payload FROM MatchApiCache WHERE MatchID = $1 AND Endpoint = $2",
     [match._apiFixtureId, providerEndpoint],
   );
   const cacheData = providerCache?.rows[0]?.payload ?? {};
-  const providerIds = [...new Set([Number(match._apiFixtureId), Number(fallbackProviderId)].filter((id) => id > 0))];
+  const apiStateResult = await pool.query(
+    "SELECT Payload FROM MatchApiCache WHERE MatchID = 0 AND Endpoint = 'api-football-state'",
+  ).catch(() => ({ rows: [] as any[] }));
+  const apiFootballSuspended = apiStateResult.rows[0]?.payload?.suspended === true;
+  const fallbackSourceId = fallbackProviderId ?? (Number(match._fallbackProviderIds?.[0] ?? 0) || null);
+  const hasAlternativeMatchDetails = Boolean((match._fallbackProviderIds?.length || fallbackProviderId != null) && (
+    match.events.length || match.lineups.some((team: any) => team.starters.length || team.substitutes.length || team.coach?.name) ||
+    teamStatistics || match.fixture.venue?.name || match.headToHead?.length || match.playerStatistics?.length || match.standings?.length
+  ));
+  const providerMessage = apiFootballSuspended && !hasAlternativeMatchDetails
+    ? "API-Football has suspended the configured account. Match events, lineups, and statistics cannot load until its access is restored or a working provider key is configured."
+    : null;
+  const providerIds = [...new Set([Number(match._apiFixtureId), Number(fallbackProviderId), ...(match._fallbackProviderIds ?? []).map(Number)].filter((id) => id > 0))];
   const cachedProviderDetails = new Map<number, any>();
   for (const providerId of providerIds) {
-    if (providerId >= 7_000_000_000_000 && providerId < 9_000_000_000_000) {
-      const endpoint = providerId >= 8_000_000_000_000 ? "tds-detail" : "fd-detail";
+    if (providerId >= 7_000_000_000_000 && providerId < 10_000_000_000_000) {
+      const endpoint = providerId >= 9_000_000_000_000 ? "sapi-detail"
+        : providerId >= 8_000_000_000_000 ? "tds-detail" : "fd-detail";
       const result = await pool.query(
         "SELECT Payload FROM MatchApiCache WHERE MatchID = $1 AND Endpoint = $2",
         [providerId, endpoint],
@@ -1091,17 +1284,19 @@ export async function executeMatchDetailPipeline(matchId: number) {
       cachedProviderDetails.set(providerId, result.rows[0]?.payload ?? {});
     } else {
       const result = await pool.query(
-        "SELECT Endpoint, Payload FROM MatchApiCache WHERE MatchID = $1 AND Endpoint IN ('events', 'lineups')",
+        "SELECT Endpoint, Payload FROM MatchApiCache WHERE MatchID = $1 AND Endpoint IN ('events', 'lineups', 'players', 'statistics')",
         [providerId],
       );
+      const lineups = result.rows.find((row) => row.endpoint === "lineups")?.payload ?? [];
+      const players = result.rows.find((row) => row.endpoint === "players")?.payload ?? [];
+      const statistics = result.rows.find((row) => row.endpoint === "statistics")?.payload ?? [];
       cachedProviderDetails.set(providerId, {
         eventCount: result.rows.find((row) => row.endpoint === "events")?.payload?.length ?? 0,
-        hasLineups: (result.rows.find((row) => row.endpoint === "lineups")?.payload ?? []).some(
-          (team: any) => (team.startXI?.length ?? 0) > 0,
-        ),
-        hasSubstitutes: (result.rows.find((row) => row.endpoint === "lineups")?.payload ?? []).some(
-          (team: any) => (team.substitutes?.length ?? 0) > 0,
-        ),
+        hasLineups: lineups.some((team: any) => (team.startXI?.length ?? 0) > 0),
+        hasSubstitutes: lineups.some((team: any) => (team.substitutes?.length ?? 0) > 0),
+        hasPlayerStats: players.some((team: any) => team.players?.some((player: any) => player.statistics?.length > 0)),
+        hasPlayerRatings: players.some((team: any) => team.players?.some((player: any) => player.statistics?.[0]?.games?.rating != null)),
+        hasStatistics: statistics.length >= 2,
       });
     }
   }
@@ -1112,6 +1307,11 @@ export async function executeMatchDetailPipeline(matchId: number) {
     lineups: match.lineups.some((team: any) => team.starters.length > 0),
     substitutes: match.lineups.some((team: any) => team.substitutes.length > 0),
     coaches: match.lineups.some((team: any) => Boolean(team.coach?.name)),
+    playerStats: Boolean(match.playerStatistics?.length) || match.lineups.some((team: any) => [...team.starters, ...team.substitutes].some((player: any) => player.goals || player.assists || player.minutes != null)),
+    playerRatings: match.lineups.some((team: any) => [...team.starters, ...team.substitutes].some((player: any) => player.rating != null)),
+    statistics: Boolean(teamStatistics?.home && teamStatistics?.away),
+    headToHead: Boolean(match.headToHead?.length),
+    standings: Boolean(match.standings?.length),
   };
   const providerField = {
     venue: "hasVenue",
@@ -1120,41 +1320,69 @@ export async function executeMatchDetailPipeline(matchId: number) {
     lineups: "hasLineups",
     substitutes: "hasSubstitutes",
     coaches: "hasCoaches",
+    playerStats: "hasPlayerStats",
+    playerRatings: "hasPlayerRatings",
+    statistics: "hasStatistics",
+    headToHead: "headToHeadCount",
+    standings: "hasStandings",
   } as const;
-  const providerName = (providerId: number) => providerId >= 8_000_000_000_000
-    ? "TheSportsDB"
+  const providerName = (providerId: number) => providerId >= 9_000_000_000_000
+    ? "SportAPI.ai"
+    : providerId >= 8_000_000_000_000 ? "TheSportsDB"
     : providerId >= 7_000_000_000_000 ? "football-data.org" : "API-Football";
   const fieldProviders = Object.fromEntries(Object.entries(availableFields).map(([field, available]) => {
     if (!available) return [field, null];
     const sourceId = providerIds.find((id) => {
       const value = cachedProviderDetails.get(id)?.[providerField[field as keyof typeof providerField]];
-      return field === "events" ? Number(value) > 0 : Boolean(value);
+      return ["events", "headToHead"].includes(field) ? Number(value) > 0 : Boolean(value);
     });
     return [field, sourceId ? providerName(sourceId) : "PostgreSQL (provider provenance not recorded)"];
   }));
-  return { ...match,
+  const response = { ...match, teamStatistics,
     _detailAvailability: {
-      source: fallbackProviderId != null && fallbackProviderId >= 8_000_000_000_000
-        ? "TheSportsDB (fallback)"
-        : fallbackProviderId != null && fallbackProviderId >= 7_000_000_000_000
+      source: fallbackSourceId != null && fallbackSourceId >= 9_000_000_000_000
+        ? "SportAPI.ai (fallback)"
+        : fallbackSourceId != null && fallbackSourceId >= 8_000_000_000_000
+          ? "TheSportsDB (fallback)"
+        : fallbackSourceId != null && fallbackSourceId >= 7_000_000_000_000
           ? "football-data.org (fallback)"
-          : match._apiFixtureId != null && match._apiFixtureId >= 8_000_000_000_000
-            ? "TheSportsDB"
+          : match._apiFixtureId != null && match._apiFixtureId >= 9_000_000_000_000
+            ? "SportAPI.ai"
+            : match._apiFixtureId != null && match._apiFixtureId >= 8_000_000_000_000
+              ? "TheSportsDB"
             : match._apiFixtureId != null && match._apiFixtureId >= 7_000_000_000_000 && match._apiFixtureId < 8_000_000_000_000
               ? "football-data.org"
               : match._apiFixtureId != null && match._apiFixtureId < 7_000_000_000_000
                 ? "API-Football"
                 : "PostgreSQL (provider provenance not recorded)",
       permission: cacheData.permission ?? null,
+      providerMessage,
       venue: Boolean(match.fixture.venue?.name),
       referee: Boolean(match.fixture.referees?.length),
       events: match.events.length > 0,
       lineups: match.lineups.some((team: any) => team.starters.length > 0),
       coaches: match.lineups.some((team: any) => Boolean(team.coach?.name)),
       substitutes: match.lineups.some((team: any) => team.substitutes.length > 0),
-      playerStats: match.lineups.some((team: any) => [...team.starters, ...team.substitutes].some((player: any) => player.goals || player.assists || player.minutes != null)),
-      playerRatings: match.lineups.some((team: any) => [...team.starters, ...team.substitutes].some((player: any) => player.rating != null)),
+      playerStats: availableFields.playerStats,
+      playerRatings: availableFields.playerRatings,
+      statistics: Boolean(teamStatistics?.home && teamStatistics?.away),
+      headToHead: Boolean(match.headToHead?.length),
+      standings: Boolean(match.standings?.length),
       providers: fieldProviders,
     },
     _pipelineMetadata: { source: 'PostgreSQL', databaseVerified: true, retrievedDirectlyFromDatabase: true } };
+  const details = {
+    fixture: { venue: response.fixture.venue, referees: response.fixture.referees },
+    lineups: response.lineups, events: response.events, playerStatistics: response.playerStatistics,
+    teamStatistics: response.teamStatistics, headToHead: response.headToHead, standings: response.standings,
+    _fallbackProviderIds: response._fallbackProviderIds ?? [],
+  };
+  const hasUsefulDetails = Boolean(details.events?.length || details.lineups?.some((team: any) =>
+    team.starters?.length || team.substitutes?.length || team.coach?.name) || details.playerStatistics?.length ||
+    details.teamStatistics?.home || details.headToHead?.length || details.standings?.length || details.fixture.venue?.name);
+  await pool.query(`INSERT INTO MatchApiCache (MatchID, Endpoint, Payload, FetchedAt)
+    VALUES ($1, 'detail-snapshot', $2::jsonb, CURRENT_TIMESTAMP)
+    ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`,
+    [dbData._databaseMatchId, JSON.stringify({ details, ttlMs: matchDetailSnapshotTtl(response, hasUsefulDetails), status: response.fixture.status.short })]);
+  return response;
 }

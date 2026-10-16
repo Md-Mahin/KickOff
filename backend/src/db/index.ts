@@ -97,6 +97,30 @@ export async function initializeDatabase() {
       UpdatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS ApiFootballRequestLedger (
+      RequestID BIGSERIAL PRIMARY KEY,
+      RequestedAt TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CompletedAt TIMESTAMPTZ,
+      Endpoint VARCHAR(200) NOT NULL,
+      FixtureID BIGINT,
+      Purpose VARCHAR(32) NOT NULL,
+      CacheStatus VARCHAR(20) NOT NULL,
+      IsProviderRequest BOOLEAN NOT NULL DEFAULT TRUE,
+      HttpStatus INTEGER,
+      RemainingQuota INTEGER,
+      RequestQuotaLimit INTEGER,
+      RateLimitRemaining INTEGER,
+      RateLimitLimit INTEGER,
+      ErrorSummary VARCHAR(300),
+      KeyFingerprint VARCHAR(16) NOT NULL
+    );
+    ALTER TABLE ApiFootballRequestLedger ADD COLUMN IF NOT EXISTS RequestQuotaLimit INTEGER;
+    ALTER TABLE ApiFootballRequestLedger ADD COLUMN IF NOT EXISTS RateLimitRemaining INTEGER;
+    ALTER TABLE ApiFootballRequestLedger ADD COLUMN IF NOT EXISTS RateLimitLimit INTEGER;
+    CREATE INDEX IF NOT EXISTS idx_api_football_ledger_window
+      ON ApiFootballRequestLedger (KeyFingerprint, RequestedAt DESC)
+      WHERE IsProviderRequest = TRUE;
+
     CREATE TABLE IF NOT EXISTS MatchApiCache (
       MatchID BIGINT NOT NULL,
       Endpoint VARCHAR(20) NOT NULL,

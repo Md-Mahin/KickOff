@@ -6,9 +6,26 @@ export type DetailCategory =
   | "coaches"
   | "substitutes"
   | "playerStats"
-  | "playerRatings";
+  | "playerRatings"
+  | "statistics"
+  | "headToHead"
+  | "standings";
 
 export type ProviderCapabilityMap = Record<DetailCategory, boolean>;
+
+type MatchCoverage = {
+  fixture?: { venue?: { name?: string | null } | null; referees?: unknown[] | null };
+  events?: unknown[] | null;
+  lineups?: Array<{
+    starters?: Array<{ minutes?: number | null; goals?: number; assists?: number; rating?: number | null }>;
+    substitutes?: Array<{ minutes?: number | null; goals?: number; assists?: number; rating?: number | null }>;
+    coach?: { name?: string | null } | null;
+  }> | null;
+  playerStatistics?: unknown[] | null;
+  teamStatistics?: { home?: unknown; away?: unknown } | null;
+  headToHead?: unknown[] | null;
+  standings?: unknown[] | null;
+};
 
 export const PROVIDER_CAPABILITIES: Record<string, { priority: number; categories: ProviderCapabilityMap }> = {
   "api-football": {
@@ -22,6 +39,9 @@ export const PROVIDER_CAPABILITIES: Record<string, { priority: number; categorie
       substitutes: true,
       playerStats: true,
       playerRatings: false,
+      statistics: true,
+      headToHead: true,
+      standings: true,
     },
   },
   "football-data.org": {
@@ -35,6 +55,9 @@ export const PROVIDER_CAPABILITIES: Record<string, { priority: number; categorie
       substitutes: true,
       playerStats: false,
       playerRatings: false,
+      statistics: false,
+      headToHead: false,
+      standings: false,
     },
   },
   "the-sportsdb": {
@@ -48,22 +71,46 @@ export const PROVIDER_CAPABILITIES: Record<string, { priority: number; categorie
       substitutes: true,
       playerStats: false,
       playerRatings: false,
+      statistics: false,
+      headToHead: false,
+      standings: false,
+    },
+  },
+  "sportapi.ai": {
+    priority: 85,
+    categories: {
+      venue: true,
+      referee: false,
+      events: true,
+      lineups: true,
+      coaches: true,
+      substitutes: true,
+      playerStats: false,
+      playerRatings: false,
+      statistics: true,
+      headToHead: true,
+      standings: true,
     },
   },
 };
 
-export function getMissingDetailCategories(match: any): DetailCategory[] {
+export function getMissingDetailCategories(match: MatchCoverage): DetailCategory[] {
   const categories: DetailCategory[] = [];
   if (!match?.fixture?.venue?.name) categories.push("venue");
   if (!match?.fixture?.referees?.length) categories.push("referee");
   if (!match?.events?.length) categories.push("events");
-  const hasLineupData = match?.lineups?.some((team: any) => (team.starters?.length ?? 0) > 0 || (team.substitutes?.length ?? 0) > 0);
+  const hasLineupData = (match.lineups?.length ?? 0) >= 2 && match.lineups!.slice(0, 2).every((team) =>
+    (team.starters?.length ?? 0) > 0 || (team.substitutes?.length ?? 0) > 0,
+  );
   if (!hasLineupData) categories.push("lineups");
-  const hasCoachData = match?.lineups?.some((team: any) => Boolean(team.coach?.name));
+  const hasCoachData = (match.lineups?.length ?? 0) >= 2 && match.lineups!.slice(0, 2).every((team) => Boolean(team.coach?.name));
   if (!hasCoachData) categories.push("coaches");
-  const hasSubstituteData = match?.lineups?.some((team: any) => (team.substitutes?.length ?? 0) > 0);
+  const hasSubstituteData = (match.lineups?.length ?? 0) >= 2 && match.lineups!.slice(0, 2).every((team) => (team.substitutes?.length ?? 0) > 0);
   if (!hasSubstituteData) categories.push("substitutes");
-  const hasPlayerStats = match?.lineups?.some((team: any) => [...(team.starters ?? []), ...(team.substitutes ?? [])].some((player: any) => player.minutes != null || player.goals > 0 || player.assists > 0 || player.rating != null));
+  const hasPlayerStats = Boolean(match.playerStatistics?.length);
   if (!hasPlayerStats) categories.push("playerStats");
+  if (!match.teamStatistics?.home || !match.teamStatistics?.away) categories.push("statistics");
+  if (!match.headToHead?.length) categories.push("headToHead");
+  if (!match.standings?.length) categories.push("standings");
   return Array.from(new Set(categories));
 }

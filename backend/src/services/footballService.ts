@@ -118,8 +118,8 @@ function mapApiItem(item: any) {
   };
 }
 
-async function apiFetch(path: string) {
-  return callApiFootball(path);
+async function apiFetch(path: string, purpose: "match-list" | "user-detail" | "bulk-backfill" | "development" = "user-detail") {
+  return callApiFootball(path, { purpose });
 }
 type FixtureItem = ReturnType<typeof mapApiItem>;
 
@@ -233,8 +233,8 @@ async function fetchByDate(date: string): Promise<FixtureItem[]> {
   const items = await apiFetch(`/fixtures?date=${date}`);
   return items.map(mapApiItem) as FixtureItem[];
 }
-export async function fetchEvents(fixtureId: number) {
-  return apiFetch(`/fixtures/events?fixture=${fixtureId}`);
+export async function fetchEvents(fixtureId: number, purpose: "user-detail" | "bulk-backfill" = "user-detail") {
+  return apiFetch(`/fixtures/events?fixture=${fixtureId}`, purpose);
 }
 
 export async function fetchLineups(fixtureId: number) {
@@ -1482,7 +1482,7 @@ export async function getMatchLineups(fixtureId: number) {
   }
 }
 export async function syncMatchEvents(fixtureId: number) {
-  const apiResult = await fetchEvents(fixtureId);
+  const apiResult = await fetchEvents(fixtureId, "bulk-backfill");
 
   const events = Array.isArray(apiResult) ? apiResult : [];
 

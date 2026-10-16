@@ -9,6 +9,8 @@ const DATA_RESPONSE_TTL_MS = 12 * 60 * 60_000;
 const MAX_BACKOFF_MS = 12 * 60 * 60_000;
 const RATE_LIMIT_ENDPOINT = "tds-rate-limit";
 const RATE_LIMIT_LOCK_ID = 7_004_211;
+const DETAIL_RETRY_BASE_MS = 15 * 60_000;
+const DETAIL_RETRY_MAX_MS = 6 * 60 * 60_000;
 const requestInFlight = new Map<string, Promise<unknown>>();
 let requestQueue: Promise<void> = Promise.resolve();
 let lastRequestAt = 0;
@@ -251,6 +253,8 @@ export async function syncSportsDbMatchDetails(fixtureId: number, currentStatus:
   if (cache.rows[0] && !force) {
     const prior = cache.rows[0].payload ?? {};
     const age = Date.now() - new Date(cache.rows[0].fetchedat).getTime();
+    const retryAt = prior.retryAt ? Date.parse(prior.retryAt) : 0;
+    if (retryAt > Date.now()) return false;
     // Venue and referee metadata do not mean the event timeline or lineup has
     // arrived; keep retrying those missing details instead of treating the
     // fixture as fully enriched for a week.
@@ -268,7 +272,15 @@ export async function syncSportsDbMatchDetails(fixtureId: number, currentStatus:
     requestSportsDb<{ timeline?: SportsDbTimeline[] | null }>(`lookuptimeline.php?id=${eventId}`, force),
   ]);
   if ([eventResult, lineupResult, timelineResult].every((result) => result.status === "rejected")) {
-    throw (eventResult as PromiseRejectedResult).reason;
+    const failures = Math.min(Number(cache.rows[0]?.payload?.failures ?? 0) + 1, 8);
+    const retryAt = new Date(Date.now() + Math.min(DETAIL_RETRY_BASE_MS * 2 ** (failures - 1), DETAIL_RETRY_MAX_MS)).toISOString();
+    const failure = (eventResult as PromiseRejectedResult).reason;
+    await pool.query(`INSERT INTO MatchApiCache (MatchID, Endpoint, Payload, FetchedAt)
+      VALUES ($1, 'tds-detail', $2::jsonb, CURRENT_TIMESTAMP)
+      ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`,
+      [fixtureId, JSON.stringify({ ...(cache.rows[0]?.payload ?? {}), failures, retryAt,
+        lastError: failure instanceof Error && /timeout|abort/i.test(failure.message) ? "timeout" : "provider-request-failed" })]);
+    throw failure;
   }
   const eventBody = eventResult.status === "fulfilled" ? eventResult.value : {};
   const lineupBody = lineupResult.status === "fulfilled" ? lineupResult.value : {};
@@ -276,8 +288,9 @@ export async function syncSportsDbMatchDetails(fixtureId: number, currentStatus:
   const event = eventBody.events?.[0];
   if (!event) {
     await pool.query(`INSERT INTO MatchApiCache (MatchID, Endpoint, Payload, FetchedAt)
-      VALUES ($1, 'tds-detail', '{}'::jsonb, CURRENT_TIMESTAMP)
-      ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`, [fixtureId]);
+      VALUES ($1, 'tds-detail', $2::jsonb, CURRENT_TIMESTAMP)
+      ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`,
+      [fixtureId, JSON.stringify({ failures: 0, retryAt: null, hasLineups: false, eventCount: 0 })]);
     return false;
   }
   const homeId = asNumber(event.idHomeTeam);
@@ -334,6 +347,8 @@ export async function syncSportsDbMatchDetails(fixtureId: number, currentStatus:
     VALUES ($1, 'tds-detail', $2::jsonb, CURRENT_TIMESTAMP)
     ON CONFLICT (MatchID, Endpoint) DO UPDATE SET Payload = EXCLUDED.Payload, FetchedAt = EXCLUDED.FetchedAt`,
     [fixtureId, JSON.stringify({
+      failures: 0,
+      retryAt: null,
       hasLineups: lineupRows.some((player) => player.strSubstitute !== "Yes"),
       hasSubstitutes: lineupRows.some((player) => player.strSubstitute === "Yes"),
       hasCoaches: Boolean(event.strHomeCoach || event.strAwayCoach),

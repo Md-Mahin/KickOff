@@ -22,11 +22,10 @@ import { LocalMatchTime } from "@/components/matches/local-match-time"
 import { layoutFormation } from "@/components/matches/match-lineups"
 import type { MatchEvent, MatchLineup, MatchLineupPlayer, MatchWithLeague } from "@/lib/matches"
 
-type MatchTab = "overview" | "timeline" | "lineups" | "statistics" | "h2h"
+type MatchTab = "overview" | "lineups" | "statistics" | "h2h"
 
 const TABS: { id: MatchTab; label: string; icon: typeof Goal }[] = [
   { id: "overview", label: "Overview", icon: Info },
-  { id: "timeline", label: "Commentary", icon: Goal },
   { id: "lineups", label: "Lineups", icon: UsersRound },
   { id: "statistics", label: "Statistics", icon: ChartColumn },
   { id: "h2h", label: "H2H & table", icon: History },
@@ -183,7 +182,7 @@ function LineupPanel({ lineup }: { lineup: MatchLineup }) {
 
 function PlayerStatistics({ match }: { match: MatchWithLeague }) {
   const stats = match.playerStatistics ?? []
-  if (!stats.length) return <p className="rounded-lg border border-dashed border-slate-200 px-4 py-7 text-center text-sm text-slate-500">Player match statistics and ratings are not stored for this fixture.</p>
+  if (!stats.length) return <p className="rounded-lg border border-dashed border-slate-200 px-4 py-7 text-center text-sm text-slate-500">Per-player match statistics are not available from connected providers for this fixture.</p>
   return (
     <div className="overflow-x-auto rounded-lg border border-slate-200">
       <table className="w-full min-w-[760px] text-left text-sm">
@@ -197,6 +196,29 @@ function PlayerStatistics({ match }: { match: MatchWithLeague }) {
       </table>
     </div>
   )
+}
+
+function TeamStatistics({ match }: { match: MatchWithLeague }) {
+  const statistics = match.teamStatistics
+  if (!statistics) return <p className="mt-2 text-sm text-slate-500">Team statistics are not available for this fixture from the connected provider.</p>
+  const keys = [...new Set([...Object.keys(statistics.home.values), ...Object.keys(statistics.away.values)])]
+  if (!keys.length) return <p className="mt-2 text-sm text-slate-500">The provider returned no team statistics for this fixture.</p>
+  const format = (key: string, value: string | number | null | undefined) => {
+    if (value == null) return "–"
+    const label = key.replaceAll("_", " ")
+    const suffix = label.toLowerCase().includes("possession") && !String(value).includes("%") ? "%" : ""
+    return `${value}${suffix}`
+  }
+  return <div className="mt-4 space-y-3">
+    <div className="grid grid-cols-[1fr_1.2fr_1fr] gap-3 border-b border-slate-100 pb-2 text-xs font-semibold text-slate-600">
+      <span className="text-right">{statistics.home.teamName}</span><span className="text-center">Statistic</span><span>{statistics.away.teamName}</span>
+    </div>
+    {keys.map((key) => <div key={key} className="grid grid-cols-[1fr_1.2fr_1fr] gap-3 text-sm">
+      <span className="text-right tabular-nums">{format(key, statistics.home.values[key])}</span>
+      <span className="text-center capitalize text-slate-500">{key.replaceAll("_", " ")}</span>
+      <span className="tabular-nums">{format(key, statistics.away.values[key])}</span>
+    </div>)}
+  </div>
 }
 
 export function MatchCentre({ match }: { match: MatchWithLeague }) {
@@ -213,6 +235,8 @@ export function MatchCentre({ match }: { match: MatchWithLeague }) {
         <Link href="/" className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-950"><ArrowLeft className="h-4 w-4" />Matches</Link>
         <span className="truncate text-xs font-medium text-slate-400">Database match centre</span>
       </div>
+
+      {match.detailAvailability?.providerMessage ? <div role="status" className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">{match.detailAvailability.providerMessage}</div> : null}
 
       <header className="overflow-hidden rounded-xl bg-[#132a23] text-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3 sm:px-6">
@@ -281,8 +305,6 @@ export function MatchCentre({ match }: { match: MatchWithLeague }) {
           </section>
         </div> : null}
 
-        {activeTab === "timeline" ? <section className="max-w-3xl rounded-lg border border-slate-200 bg-white p-4 sm:p-6"><div className="mb-6"><h2 className="text-base font-bold text-slate-900">Commentary</h2><p className="mt-1 text-xs text-slate-500">Only events persisted from a configured provider are shown.</p></div><EventList events={match.events ?? []} homeTeam={match.homeTeam} status={match.status} /></section> : null}
-
         {activeTab === "lineups" ? <div>
           <div className="mb-4 flex flex-wrap items-end justify-between gap-2"><div><h2 className="text-base font-bold text-slate-900">Lineups</h2><p className="mt-1 text-xs text-slate-500">Formation visualization appears only when source formation or player positions are present.</p></div><span className="text-xs text-slate-500">{lineups.reduce((sum, team) => sum + team.starters.length, 0)} starters · {lineups.reduce((sum, team) => sum + team.substitutes.length, 0)} substitutes</span></div>
           <FormationPitch lineups={lineups} />
@@ -290,18 +312,18 @@ export function MatchCentre({ match }: { match: MatchWithLeague }) {
         </div> : null}
 
         {activeTab === "statistics" ? <div className="space-y-5">
-          <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"><div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-base font-bold text-slate-900">Player statistics</h2><p className="mt-1 text-xs text-slate-500">Values read from persisted player-match records</p></div><span className="text-xs text-slate-400">Ratings are provider-supplied only</span></div><PlayerStatistics match={match} /></section>
-          <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"><h2 className="text-base font-bold text-slate-900">Team statistics</h2><p className="mt-2 text-sm text-slate-500">Team totals are not stored in the current match schema and are unavailable for this fixture.</p></section>
+          <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"><div className="mb-4 flex items-center justify-between gap-3"><div><h2 className="text-base font-bold text-slate-900">Player statistics</h2><p className="mt-1 text-xs text-slate-500">Per-match values supplied by connected providers</p></div><span className="text-xs text-slate-400">Ratings are shown only when a provider supplies them</span></div><PlayerStatistics match={match} /></section>
+          <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"><h2 className="text-base font-bold text-slate-900">Team statistics</h2><TeamStatistics match={match} /></section>
         </div> : null}
 
         {activeTab === "h2h" ? <div className="grid items-start gap-5 lg:grid-cols-2">
-          <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"><h2 className="text-base font-bold text-slate-900">Head-to-head</h2><p className="mt-1 text-xs text-slate-500">Previous meetings found in PostgreSQL</p>{match.headToHead?.length ? <ul className="mt-4 divide-y divide-slate-100">{match.headToHead.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span className="min-w-0 flex-1 truncate">{item.homeTeam} <span className="text-slate-400">vs</span> {item.awayTeam}</span><span className="font-mono font-semibold tabular-nums">{item.homeScore ?? "–"} : {item.awayScore ?? "–"}</span><time className="w-full text-xs text-slate-400">{new Date(item.date).toLocaleDateString()}</time></li>)}</ul> : <p className="mt-4 text-sm text-slate-400">No earlier meetings are stored.</p>}</section>
-          <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"><h2 className="text-base font-bold text-slate-900">Competition table</h2><p className="mt-1 text-xs text-slate-500">Stored standings for these teams</p>{match.standings?.length ? <div className="mt-4 divide-y divide-slate-100">{match.standings.map((row) => <div key={row.teamId} className="grid grid-cols-[36px_minmax(0,1fr)_38px_48px] items-center gap-2 py-3 text-sm"><span className="text-center text-xs tabular-nums text-slate-400">{row.rank ?? "–"}</span><span className="truncate font-medium">{row.teamName}</span><span className="text-right tabular-nums">{row.points ?? "–"}</span><span className="text-right text-xs text-slate-500">{row.wins}-{row.draws}-{row.losses}</span></div>)}</div> : <p className="mt-4 text-sm text-slate-400">Standings are not stored for this competition.</p>}</section>
+          <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"><h2 className="text-base font-bold text-slate-900">Head-to-head</h2><p className="mt-1 text-xs text-slate-500">Previous meetings from connected providers and PostgreSQL</p>{match.headToHead?.length ? <ul className="mt-4 divide-y divide-slate-100">{match.headToHead.map((item) => <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm"><span className="min-w-0 flex-1 truncate">{item.homeTeam} <span className="text-slate-400">vs</span> {item.awayTeam}</span><span className="font-mono font-semibold tabular-nums">{item.homeScore ?? "–"} : {item.awayScore ?? "–"}</span><time className="w-full text-xs text-slate-400">{new Date(item.date).toLocaleDateString()}</time></li>)}</ul> : <p className="mt-4 text-sm text-slate-400">No earlier meetings are available from connected providers.</p>}</section>
+          <section className="rounded-lg border border-slate-200 bg-white p-4 sm:p-5"><h2 className="text-base font-bold text-slate-900">Competition table</h2><p className="mt-1 text-xs text-slate-500">Standings from connected providers and PostgreSQL</p>{match.standings?.length ? <div className="mt-4 divide-y divide-slate-100">{match.standings.map((row) => <div key={row.teamId} className="grid grid-cols-[36px_minmax(0,1fr)_38px_48px] items-center gap-2 py-3 text-sm"><span className="text-center text-xs tabular-nums text-slate-400">{row.rank ?? "–"}</span><span className="truncate font-medium">{row.teamName}</span><span className="text-right tabular-nums">{row.points ?? "–"}</span><span className="text-right text-xs text-slate-500">{row.wins}-{row.draws}-{row.losses}</span></div>)}</div> : <p className="mt-4 text-sm text-slate-400">Standings are not available from connected providers for this competition.</p>}</section>
         </div> : null}
       </section>
 
       <footer className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-3 text-[11px] text-slate-400">
-        <span>Match information is served from PostgreSQL.</span>
+        <span>Match data comes from PostgreSQL and connected-provider fallbacks.</span>
         <span>Unavailable values are left blank until a provider supplies them.</span>
       </footer>
     </main>

@@ -29,7 +29,7 @@ function sleep(ms: number) {
 }
 
 async function syncFixtureEvents(fixtureId: number) {
-  const apiResult: unknown = await fetchEvents(fixtureId);
+  const apiResult: unknown = await fetchEvents(fixtureId, "bulk-backfill");
   const response =
     apiResult && typeof apiResult === "object"
       ? (apiResult as { response?: unknown; data?: unknown })

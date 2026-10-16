@@ -25,7 +25,16 @@ const match: MatchWithLeague = {
   roundStatus: "league",
   referees: [],
   venue: undefined,
-  events: [],
+  events: [{
+    eventid: 1,
+    eventtime: 31,
+    eventtype: "Goal",
+    playername: "Sample scorer",
+    teamname: "São Paulo FC",
+    goaltype: "Normal Goal",
+    assistplayername: null,
+    cardtype: null,
+  }],
   lineups: ["São Paulo FC", "EC Vitória"].map((name, index) => ({
     team: { id: index + 1, name, logo: null },
     formation: null,
@@ -57,10 +66,12 @@ assert.match(html, /EC Vitória/)
 assert.ok(html.includes('>2<span class="mx-2 text-white/40">:</span>1</div>'))
 assert.match(html, /aria-label="Match centre sections"/)
 assert.match(html, /role="tab"/)
-assert.match(html, /Commentary/)
+assert.doesNotMatch(html, /Commentary/)
+assert.match(html, /Match timeline/)
+assert.match(html, /aria-label="Match timeline"/)
 assert.match(html, /Lineups/)
 assert.match(html, /Not available from connected providers/)
-assert.match(html, /No event timeline was returned for this match/)
+assert.match(html, /Sample scorer/)
 assert.match(html, /Match information is served from PostgreSQL/)
 
 console.log("Match centre render tests passed: scoreboard, accessible tabs, and independent unavailable states.")

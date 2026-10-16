@@ -30,7 +30,8 @@ async function runBatch(batchSize: number): Promise<number> {
         COALESCE((cache.Payload->>'hasVenue')::boolean, false) AS has_venue,
         COALESCE((cache.Payload->>'hasReferee')::boolean, false) AS has_referee,
         COALESCE((cache.Payload->>'hasCoaches')::boolean, false) AS has_coaches,
-        cache.Payload->>'permission' AS permission
+        cache.Payload->>'permission' AS permission,
+        cache.Payload->>'retryAt' AS retry_at
       FROM Match m
       LEFT JOIN MatchApiCache cache
         ON cache.MatchID = m.ApiFixtureID
@@ -41,6 +42,7 @@ async function runBatch(batchSize: number): Promise<number> {
       WHERE m.ApiFixtureID >= 7000000000000
         AND m.ApiFixtureID < 9000000000000
         AND (cache.FetchedAt IS NULL OR cache.FetchedAt < CURRENT_TIMESTAMP - INTERVAL '10 minutes')
+        AND (cache.Payload->>'retryAt' IS NULL OR (cache.Payload->>'retryAt')::timestamptz <= CURRENT_TIMESTAMP)
       ORDER BY
         (cache.FetchedAt IS NULL) DESC,
         (NOT COALESCE((cache.Payload->>'hasLineups')::boolean, false)) DESC,
@@ -59,7 +61,8 @@ async function runBatch(batchSize: number): Promise<number> {
           : await syncFootballDataMatchDetails(fixtureId);
         if (updated) synced++;
       } catch (error) {
-        console.warn(`[match-sync] Fixture ${fixtureId} skipped: ${(error as Error).message}`);
+        const message = (error as Error).message ?? "provider error";
+        if (!/timeout|abort/i.test(message)) console.warn(`[match-sync] Fixture ${fixtureId} skipped: ${message}`);
       }
     }
     return synced;

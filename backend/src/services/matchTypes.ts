@@ -16,5 +16,8 @@ export interface MatchDetails {
   playerStatistics?: Array<Record<string, unknown>>;
   standings?: Array<Record<string, unknown>>;
   headToHead?: Array<Record<string, unknown>>;
-  teamStatistics?: null;
+  teamStatistics?: {
+    home: { teamId: number; teamName: string; values: Record<string, string | number | null> };
+    away: { teamId: number; teamName: string; values: Record<string, string | number | null> };
+  } | null;
 }

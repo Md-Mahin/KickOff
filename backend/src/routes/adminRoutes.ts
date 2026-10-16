@@ -1,8 +1,31 @@
 import { Router, Request, Response } from "express";
 import { pool, withTransaction, PoolClient } from "../db";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth";
+import { getApiFootballBudgetReport, reconcileApiFootballQuota } from "../services/apiFootballClient";
 
 const router = Router();
+
+router.get("/api-football", requireAuth, requireRole("admin"), async (_req, res) => {
+  try {
+    return res.json(await getApiFootballBudgetReport());
+  } catch (error) {
+    console.error("GET /api/admin/api-football error:", (error as Error).message);
+    return res.status(500).json({ message: "Could not read API-Football diagnostics." });
+  }
+});
+
+router.post("/api-football/reconcile", requireAuth, requireRole("admin"), async (req, res) => {
+  try {
+    const { remaining, limit, accountActive, dashboardVerified, verifiedAt } = req.body ?? {};
+    await reconcileApiFootballQuota({ remaining: Number(remaining), limit: Number(limit),
+      accountVerified: accountActive === true && dashboardVerified === true,
+      accountActive: accountActive === true, dashboardVerified: dashboardVerified === true,
+      verifiedAt: typeof verifiedAt === "string" ? verifiedAt : undefined });
+    return res.json({ message: "Quota reconciled from dashboard verification; existing rolling request budget is preserved." });
+  } catch (error) {
+    return res.status(400).json({ message: (error as Error).message });
+  }
+});
 
 // In-memory cache for high-frequency admin endpoints to ensure sub-millisecond response times
 let cachedDistribution: { data: any; expiresAt: number } | null = null;

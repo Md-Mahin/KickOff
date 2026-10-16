@@ -10,7 +10,7 @@ async function sync() {
   const date = process.argv[2] ?? new Date().toISOString().slice(0, 10);
   try {
     await initializeDatabase();
-    const fixtures = await callApiFootball(`/fixtures?date=${date}`);
+    const fixtures = await callApiFootball(`/fixtures?date=${date}`, { purpose: "bulk-backfill" });
     for (const fixture of fixtures) await syncFixtureToDb(fixture);
     console.log(`[DB] Synchronized ${fixtures.length} fixtures for ${date}`);
   } catch (error) {

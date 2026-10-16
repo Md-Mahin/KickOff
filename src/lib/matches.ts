@@ -55,6 +55,9 @@ export type MatchWithLeague = Match & {
     substitutes: boolean
     playerStats: boolean
     playerRatings: boolean
+    statistics?: boolean
+    headToHead?: boolean
+    providerMessage?: string | null
     providers?: Record<string, string | null>
   }
 }
@@ -101,7 +104,10 @@ export type HeadToHeadMatch = {
   awayScore: number | null
 }
 
-export type MatchTeamStatistics = null
+export type MatchTeamStatistics = {
+  home: { teamId: number; teamName: string; values: Record<string, string | number | null> }
+  away: { teamId: number; teamName: string; values: Record<string, string | number | null> }
+} | null
 export type MatchEvent = {
   eventid: number
   eventtime: number | null

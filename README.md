@@ -15,7 +15,10 @@ DB_PASSWORD=your-password
 JWT_SECRET=use-a-long-random-value
 ADMIN_BOOTSTRAP_KEY=use-a-separate-admin-invite
 API_FOOTBALL_KEY=your-api-football-key
+SPORTAPI_AI_KEY=your-sportapi-ai-api-key
 ```
+
+`SPORTAPI_AI_KEY` is optional. SportAPI.ai is queried when match details are missing from configured providers; add your key from [sportapi.ai](https://sportapi.ai/) to enable its lineups, coaches, venue, events, match statistics, and head-to-head data.
 
 For a fresh database, apply `backend/database/schema.sql`. For an existing database, the backend automatically adds the `Users.Role` column and `UserSessions` table when it starts. Then run:
 
