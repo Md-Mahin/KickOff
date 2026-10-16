@@ -37,7 +37,7 @@ export default function GlobalSearch() {
 
     const delayDebounceFn = setTimeout(() => {
       setLoading(true)
-      fetch(`http://localhost:5000/api/search?q=${encodeURIComponent(searchQuery)}&type=${encodeURIComponent(activeFilter)}`)
+      fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&type=${encodeURIComponent(activeFilter)}`)
         .then(res => res.json())
         .then(data => {
           if (Array.isArray(data)) {

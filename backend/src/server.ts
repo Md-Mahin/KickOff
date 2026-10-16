@@ -67,7 +67,11 @@ initializeDatabase()
   .finally(() => {
     app.listen(PORT, () => {
       console.log(`KickOff backend running on http://localhost:${PORT}`);
-      startMatchDetailScheduler();
+      if (process.env.VERCEL !== "1") {
+        startMatchDetailScheduler();
+      }
     });
   });
+
+export default app;
 

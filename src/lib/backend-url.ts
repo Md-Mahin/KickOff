@@ -1,5 +1,6 @@
-/** Shared API origin for browser and server requests. */
+/** Server calls use Vercel's runtime service binding; browser calls use the public /api rewrite. */
 export const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL ??
-  process.env.BACKEND_URL ??
-  "http://localhost:5000"
+  typeof window !== "undefined"
+    ? ""
+    : process.env.BACKEND_URL ??
+      (process.env.NODE_ENV === "development" ? "http://localhost:5000" : "")

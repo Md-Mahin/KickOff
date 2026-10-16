@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AdminPerformanceDashboard } from "@/components/dashboard/admin-performance-dashboard"
 
-const API_URL = "http://localhost:5000/api"
+const API_URL = "/api"
 
 type AuthUser = { userId: number; role: "fan" | "admin" }
 type Team = { teamId: number; teamName: string }
